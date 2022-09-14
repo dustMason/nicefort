@@ -90,8 +90,16 @@ type model struct {
 	playerID string
 }
 
+type TickMsg time.Time
+
+func doTick() tea.Cmd {
+	return tea.Tick(time.Millisecond*100, func(t time.Time) tea.Msg {
+		return TickMsg(t)
+	})
+}
+
 func (m model) Init() tea.Cmd {
-	return nil
+	return doTick()
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -116,15 +124,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.quitting = true
 			return m, tea.Quit
 		}
+	case TickMsg:
+		return m, doTick()
 	}
 	return m, nil
 }
 
 func (m model) View() string {
-	// return m.world.String() + "\n" + m.term + "\n" + m.lastKey
 	doc := strings.Builder{}
-	// todo `world` should have a render func that accepts player coord and w/h of viewbox
-	world := dialogBoxStyle.Render(m.world.String())
+	world := dialogBoxStyle.Render(m.world.Render(m.playerID, 60, 30))
 	doc.WriteString(world)
 	return docStyle.Render(doc.String())
 }
@@ -133,7 +141,6 @@ var (
 	dialogBoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("#874BFD")).
-			Padding(1, 1).
 			BorderTop(true).
 			BorderLeft(true).
 			BorderRight(true).
@@ -162,7 +169,7 @@ var (
 	//
 	// fishCakeStyle = statusNugget.Copy().Background(lipgloss.Color("#6124DF"))
 
-	docStyle = lipgloss.NewStyle().Padding(1, 1)
+	docStyle = lipgloss.NewStyle().Padding(0)
 )
 
 type Server struct {

@@ -8,11 +8,11 @@ type entity struct {
 type player struct {
 	id     string
 	secret string
-	loc    coord
+	loc    Coord
 	// todo lots more stuff like inventory, stats, etc
 }
 
-func NewPlayer(id string, c coord) *entity {
+func NewPlayer(id string, c Coord) *entity {
 	p := &player{id: id, loc: c}
 	return &entity{class: Being, player: p}
 }
