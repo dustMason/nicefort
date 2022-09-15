@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/wish"
@@ -36,12 +37,15 @@ const (
 )
 
 type keyMap struct {
-	Up    key.Binding
-	Down  key.Binding
-	Left  key.Binding
-	Right key.Binding
-	Help  key.Binding
-	Quit  key.Binding
+	Up        key.Binding
+	Down      key.Binding
+	Left      key.Binding
+	Right     key.Binding
+	Help      key.Binding
+	FocusChat key.Binding
+	Enter     key.Binding
+	Esc       key.Binding
+	Quit      key.Binding
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
@@ -76,8 +80,18 @@ var keys = keyMap{
 		key.WithKeys("?"),
 		key.WithHelp("?", "toggle help"),
 	),
+	FocusChat: key.NewBinding(
+		key.WithKeys("t"),
+		key.WithHelp("t", "focus chat input"),
+	),
+	Enter: key.NewBinding(
+		key.WithKeys("enter"),
+	),
+	Esc: key.NewBinding(
+		key.WithKeys("esc"),
+	),
 	Quit: key.NewBinding(
-		key.WithKeys("q", "esc", "ctrl+c"),
+		key.WithKeys("q", "ctrl+c"),
 		key.WithHelp("q", "quit"),
 	),
 }
@@ -91,6 +105,7 @@ type model struct {
 	term       string
 	playerID   string
 	playerName string
+	chatInput  textinput.Model
 }
 
 type TickMsg time.Time
@@ -106,6 +121,38 @@ func (m model) Init() tea.Cmd {
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg.(type) {
+	case TickMsg:
+		return m, doTick()
+	}
+	if m.chatInput.Focused() {
+		return m.handleChatModeMessage(msg)
+	}
+	return m.handleNormalModeMessage(msg)
+}
+
+func (m model) handleChatModeMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch {
+		case key.Matches(msg, m.keys.Enter):
+			if m.chatInput.Focused() {
+				m.world.EmitEvent(fmt.Sprintf("%s: %s", m.playerName, m.chatInput.Value()))
+				m.chatInput.SetValue("")
+				m.chatInput.Blur()
+			}
+		case key.Matches(msg, m.keys.Esc):
+			m.chatInput.SetValue("")
+			m.chatInput.Blur()
+		}
+	}
+	m.chatInput, cmd = m.chatInput.Update(msg)
+	return m, cmd
+
+}
+
+func (m model) handleNormalModeMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch {
@@ -123,14 +170,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.world.ApplyCommand(Right, m.playerID, m.playerName)
 		case key.Matches(msg, m.keys.Help):
 			m.help.ShowAll = !m.help.ShowAll
+		case key.Matches(msg, m.keys.FocusChat):
+			if !m.chatInput.Focused() {
+				m.chatInput.Focus()
+			}
 		case key.Matches(msg, m.keys.Quit):
 			m.quitting = true
 			return m, tea.Quit
 		}
-	case TickMsg:
-		return m, doTick()
 	}
 	return m, nil
+
 }
 
 var (
@@ -145,11 +195,16 @@ var (
 
 	mapBoxStyle = lipgloss.NewStyle().
 			Inherit(dialogBoxStyle).
+			Border(lipgloss.RoundedBorder()).
 			Width(60).Height(30)
 
 	feedBoxStyle = lipgloss.NewStyle().
 			Inherit(dialogBoxStyle).
-			Width(20).Height(30)
+			Width(20).Height(27)
+
+	chatInputStyle = lipgloss.NewStyle().
+			Inherit(dialogBoxStyle).
+			Width(20).Height(1)
 
 	statusBarStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.AdaptiveColor{Light: "#343433", Dark: "#C1C6B2"}).
@@ -166,7 +221,11 @@ func (m model) View() string {
 		lipgloss.JoinHorizontal(
 			lipgloss.Top,
 			mapBoxStyle.Render(m.world.Render(m.playerID, m.playerName, 30, 29)),
-			feedBoxStyle.Render(strings.Join(m.world.events, "\n\n")),
+			lipgloss.JoinVertical(
+				lipgloss.Left,
+				feedBoxStyle.Render(strings.Join(m.world.events, "\n\n")),
+				chatInputStyle.Render(m.chatInput.View()),
+			),
 		),
 		statusBarStyle.Render(m.lastKey),
 	)
@@ -222,6 +281,10 @@ func teaHandler(w *World) bm.Handler {
 			return nil, nil
 		}
 		pubKey := string(gossh.MarshalAuthorizedKey(s.PublicKey()))
+		ti := textinput.New()
+		ti.Placeholder = "chat"
+		ti.CharLimit = 156
+		ti.Width = 27
 		m := model{
 			term:       pty.Term,
 			keys:       keys,
@@ -229,6 +292,7 @@ func teaHandler(w *World) bm.Handler {
 			world:      w,
 			playerID:   pubKey,
 			playerName: s.User(),
+			chatInput:  ti,
 		}
 		w.EmitEvent(fmt.Sprintf("%s joined.", s.User()))
 		return m, []tea.ProgramOption{tea.WithAltScreen()}

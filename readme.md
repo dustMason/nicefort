@@ -16,7 +16,6 @@ ssh -p 23234 jordan@127.0.0.1
 ```
 
 ## TODO
-- chat
 - scrolling ui for chat / status messages
 - items / inventory
 - ticker in `world` to handle moving NPEs
