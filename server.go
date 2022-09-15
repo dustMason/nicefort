@@ -11,6 +11,7 @@ import (
 	bm "github.com/charmbracelet/wish/bubbletea"
 	lm "github.com/charmbracelet/wish/logging"
 	"github.com/gliderlabs/ssh"
+	gossh "golang.org/x/crypto/ssh"
 	"log"
 	"os"
 	"os/signal"
@@ -31,6 +32,7 @@ const (
 	Right
 	Down
 	Left
+	Disconnect
 )
 
 type keyMap struct {
@@ -81,13 +83,14 @@ var keys = keyMap{
 }
 
 type model struct {
-	world    *World
-	quitting bool
-	keys     keyMap
-	lastKey  string
-	help     help.Model
-	term     string
-	playerID string
+	world      *World
+	quitting   bool
+	keys       keyMap
+	lastKey    string
+	help       help.Model
+	term       string
+	playerID   string
+	playerName string
 }
 
 type TickMsg time.Time
@@ -108,16 +111,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, m.keys.Up):
 			m.lastKey = "↑"
-			m.world.ApplyCommand(Up, m.playerID)
+			m.world.ApplyCommand(Up, m.playerID, m.playerName)
 		case key.Matches(msg, m.keys.Down):
 			m.lastKey = "↓"
-			m.world.ApplyCommand(Down, m.playerID)
+			m.world.ApplyCommand(Down, m.playerID, m.playerName)
 		case key.Matches(msg, m.keys.Left):
 			m.lastKey = "←"
-			m.world.ApplyCommand(Left, m.playerID)
+			m.world.ApplyCommand(Left, m.playerID, m.playerName)
 		case key.Matches(msg, m.keys.Right):
 			m.lastKey = "→"
-			m.world.ApplyCommand(Right, m.playerID)
+			m.world.ApplyCommand(Right, m.playerID, m.playerName)
 		case key.Matches(msg, m.keys.Help):
 			m.help.ShowAll = !m.help.ShowAll
 		case key.Matches(msg, m.keys.Quit):
@@ -130,47 +133,46 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) View() string {
-	doc := strings.Builder{}
-	world := dialogBoxStyle.Render(m.world.Render(m.playerID, 60, 30))
-	doc.WriteString(world)
-	return docStyle.Render(doc.String())
-}
-
 var (
 	dialogBoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("#874BFD")).
+			Padding(0).
 			BorderTop(true).
 			BorderLeft(true).
 			BorderRight(true).
 			BorderBottom(true)
 
-	// statusNugget = lipgloss.NewStyle().
-	// 		Foreground(lipgloss.Color("#FFFDF5")).
-	// 		Padding(0, 1)
-	//
-	// statusBarStyle = lipgloss.NewStyle().
-	// 		Foreground(lipgloss.AdaptiveColor{Light: "#343433", Dark: "#C1C6B2"}).
-	// 		Background(lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#353533"})
-	//
-	// statusStyle = lipgloss.NewStyle().
-	// 		Inherit(statusBarStyle).
-	// 		Foreground(lipgloss.Color("#FFFDF5")).
-	// 		Background(lipgloss.Color("#FF5F87")).
-	// 		Padding(0, 1).
-	// 		MarginRight(1)
-	//
-	// encodingStyle = statusNugget.Copy().
-	// 		Background(lipgloss.Color("#A550DF")).
-	// 		Align(lipgloss.Right)
-	//
-	// statusText = lipgloss.NewStyle().Inherit(statusBarStyle)
-	//
-	// fishCakeStyle = statusNugget.Copy().Background(lipgloss.Color("#6124DF"))
+	mapBoxStyle = lipgloss.NewStyle().
+			Inherit(dialogBoxStyle).
+			Width(60).Height(30)
+
+	feedBoxStyle = lipgloss.NewStyle().
+			Inherit(dialogBoxStyle).
+			Width(20).Height(30)
+
+	statusBarStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.AdaptiveColor{Light: "#343433", Dark: "#C1C6B2"}).
+			Background(lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#353533"}).
+			Width(84)
 
 	docStyle = lipgloss.NewStyle().Padding(0)
 )
+
+func (m model) View() string {
+	doc := strings.Builder{}
+	ui := lipgloss.JoinVertical(
+		lipgloss.Left,
+		lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			mapBoxStyle.Render(m.world.Render(m.playerID, m.playerName, 30, 29)),
+			feedBoxStyle.Render(strings.Join(m.world.events, "\n\n")),
+		),
+		statusBarStyle.Render(m.lastKey),
+	)
+	doc.WriteString(ui)
+	return docStyle.Render(doc.String())
+}
 
 type Server struct {
 	ssh   *ssh.Server
@@ -183,8 +185,12 @@ func NewServer(w *World) *Server {
 		wish.WithHostKeyPath(".ssh/term_info_ed25519"),
 		wish.WithMiddleware(
 			bm.Middleware(teaHandler(w)),
+			DisconnectHandlerMiddleware(w),
 			lm.Middleware(),
 		),
+		ssh.PublicKeyAuth(func(ctx ssh.Context, key ssh.PublicKey) bool {
+			return true // allow all keys
+		}),
 	)
 	if err != nil {
 		log.Fatalln(err)
@@ -196,6 +202,18 @@ func NewServer(w *World) *Server {
 	}
 }
 
+func DisconnectHandlerMiddleware(w *World) wish.Middleware {
+	return func(sh ssh.Handler) ssh.Handler {
+		return func(s ssh.Session) {
+			pubKey := string(gossh.MarshalAuthorizedKey(s.PublicKey()))
+			playerName := s.User()
+			sh(s)
+			w.ApplyCommand(Disconnect, pubKey, playerName)
+			w.EmitEvent(fmt.Sprintf("%s left.", playerName))
+		}
+	}
+}
+
 func teaHandler(w *World) bm.Handler {
 	return func(s ssh.Session) (tea.Model, []tea.ProgramOption) {
 		pty, _, active := s.Pty()
@@ -203,15 +221,17 @@ func teaHandler(w *World) bm.Handler {
 			wish.Fatalln(s, "no active terminal, skipping")
 			return nil, nil
 		}
+		pubKey := string(gossh.MarshalAuthorizedKey(s.PublicKey()))
 		m := model{
-			term:     pty.Term,
-			keys:     keys,
-			help:     help.New(),
-			world:    w,
-			playerID: s.User(),
+			term:       pty.Term,
+			keys:       keys,
+			help:       help.New(),
+			world:      w,
+			playerID:   pubKey,
+			playerName: s.User(),
 		}
+		w.EmitEvent(fmt.Sprintf("%s joined.", s.User()))
 		return m, []tea.ProgramOption{tea.WithAltScreen()}
-
 	}
 }
 

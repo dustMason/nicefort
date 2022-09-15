@@ -1,14 +1,16 @@
 package main
 
 type entity struct {
-	class  Class
-	player *player
+	class    Class
+	subclass Subclass
+	player   *player
 }
 
 type player struct {
-	id     string
-	secret string
-	loc    Coord
+	id   string // the ssh pubkey of the connected player
+	loc  Coord
+	name string
+
 	// todo lots more stuff like inventory, stats, etc
 }
 
@@ -18,31 +20,68 @@ func NewPlayer(id string, c Coord) *entity {
 }
 
 func (e entity) String() string {
-	switch e.class {
-	case Being:
-		if e.player != nil {
-			return "J" // todo get char from player
-		}
-		return "&"
-	case Item:
-		return "i"
-	case Environment:
-		return "%"
-	case Portal:
-		return "d"
-	case Projectile:
-		return "-" // todo bearing and velocity
-	default:
-		return ""
+	if e.player != nil {
+		return " " + string(e.player.name[0])
 	}
+	return tile(e.class, e.subclass)
+}
+
+func (e entity) Color() string {
+	if e.player != nil {
+		return "#FDC300"
+	}
+	if e.subclass == Floor {
+		return "#444444"
+	}
+	return "#fdffcc"
 }
 
 type Class int
+type Subclass int
+
+const Unknown = "? "
 
 const (
 	Being Class = iota
 	Item
 	Environment
-	Portal
-	Projectile
 )
+
+const (
+	Default Subclass = iota // some classes don't need a subclass
+	WallBlock
+	WallCornerNE
+	WallCornerSE
+	WallCornerSW
+	WallCornerNW
+	Floor
+	Space
+)
+
+var tileMap = map[Class]map[Subclass]string{
+	Environment: {
+		WallCornerNE: "◣ ",
+		WallCornerSE: "◤ ",
+		WallCornerSW: "◥ ",
+		WallCornerNW: "◢ ",
+		Floor:        "..",
+		Space:        "  ",
+		Default:      "猫",
+	},
+	Item: {
+		Default: "i ",
+	},
+	Being: {
+		Default: "& ",
+	},
+}
+
+func tile(class Class, subclass Subclass) string {
+	if submap, ok := tileMap[class]; ok {
+		if m, ok := submap[subclass]; ok {
+			return m
+		}
+		return submap[Default]
+	}
+	return Unknown
+}

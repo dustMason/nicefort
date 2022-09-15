@@ -17,7 +17,9 @@ ssh -p 23234 jordan@127.0.0.1
 
 ## TODO
 - chat
-- use contoured tiling algo to draw dungeon walls (https://github.com/dustMason/legrid/blob/main/sketch.js#L119-L159)
+- scrolling ui for chat / status messages
 - items / inventory
 - ticker in `world` to handle moving NPEs
+- on disk persistence of world state
 - fighting
+- switch from `map[coord]*entity` to `[]*entity` for `World.entity` for better perf
