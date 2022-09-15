@@ -6,19 +6,6 @@ type entity struct {
 	player   *player
 }
 
-type player struct {
-	id   string // the ssh pubkey of the connected player
-	loc  Coord
-	name string
-
-	// todo lots more stuff like inventory, stats, etc
-}
-
-func NewPlayer(id string, c Coord) *entity {
-	p := &player{id: id, loc: c}
-	return &entity{class: Being, player: p}
-}
-
 func (e entity) String() string {
 	if e.player != nil {
 		return " " + string(e.player.name[0])
@@ -34,6 +21,17 @@ func (e entity) Color() string {
 		return "#444444"
 	}
 	return "#fdffcc"
+}
+
+func (e entity) SeeThrough() bool {
+	if e.class != Environment {
+		return true
+	}
+	return e.subclass == Floor
+}
+
+func (e entity) Memorable() bool {
+	return e.class != Being
 }
 
 type Class int

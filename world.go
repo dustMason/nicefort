@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/lucasb-eyer/go-colorful"
-	"math"
 	"math/rand"
 	"strings"
 	"sync"
@@ -62,11 +60,12 @@ func (w *World) getOrCreatePlayer(playerID, playerName string) *entity {
 		e = NewPlayer(playerID, c)
 		w.players[playerID] = e
 	}
+	e.player.name = playerName
 	if _, ok := w.entities[e.player.loc]; !ok {
 		// ensure that an `entities` entry exists. (this might be a reconnecting player)
 		w.entities[e.player.loc] = e
+		e.player.See(w)
 	}
-	e.player.name = playerName
 	return e
 }
 
@@ -83,58 +82,56 @@ func (w *World) movePlayer(e *entity, a Action) {
 		delta.X = -1
 	}
 	newLoc := e.player.loc.Add(delta)
-	if w.inBounds(newLoc) && w.available(newLoc) {
+	if w.InBounds(newLoc.X, newLoc.Y) && w.available(newLoc) {
 		w.Lock()
 		defer w.Unlock()
 		w.entities[newLoc] = e
 		delete(w.entities, e.player.loc)
 		e.player.loc = newLoc
+		e.player.See(w)
 	}
 }
 
 // todo World needs it's own ticker, running in a loop, that moves NPEs
 
-// Render accepts a playerID and vw,vh viewport size
-// it renders a section of the map that player can see
 func (w *World) Render(playerID, playerName string, vw, vh int) string {
-	c := w.getOrCreatePlayer(playerID, playerName).player.loc
+	vw = vw / 2 // each tile is 2 chars wide
+	ply := w.getOrCreatePlayer(playerID, playerName).player
+	c := ply.loc
 	x := c.X
 	y := c.Y
+	seen := ply.AllVisited()
 
-	c2, _ := colorful.Hex("#000000")
-
+	w.RLock()
+	defer w.RUnlock()
 	var b strings.Builder
 	b.Grow(vw*vh + vh)
 	left := x - vw/2
 	right := x + vw/2
 	top := y - vh/2
 	bottom := y + vh/2
-	maxDist := float64(vw / 2)
-
-	w.RLock()
-	defer w.RUnlock()
 	ix := left
 	iy := top
 	for iy < bottom {
 		for ix < right {
 			var ent *entity
-			if ix < 0 || iy < 0 {
-				b.WriteString(tileMap[Environment][Space])
-			} else if ix > w.W-1 || iy > w.H-1 {
+			if !w.InBounds(ix, iy) {
 				b.WriteString(tileMap[Environment][Space])
 			} else {
-				d := dist(ix, iy, c.X, c.Y, maxDist)
-				if d >= 1.0 {
-					b.WriteString(tileMap[Environment][Space])
-				} else {
-					if e, ok := w.entities[Coord{ix, iy}]; ok {
+				ic := Coord{ix, iy}
+				inView := ply.CanSee(ix, iy)
+				memString, inPastView := seen[ic]
+				if inPastView && !inView {
+					b.WriteString(memString)
+				} else if inView {
+					if e, ok := w.entities[ic]; ok {
 						ent = e
 					} else {
 						ent = &entity{class: Environment, subclass: Floor}
 					}
-					c1, _ := colorful.Hex(ent.Color())
-					clr := c1.BlendRgb(c2, d).Hex()
-					b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(clr)).Render(ent.String()))
+					b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ent.Color())).Render(ent.String()))
+				} else { // not in past or current view
+					b.WriteString(tileMap[Environment][Space])
 				}
 			}
 			ix++
@@ -146,11 +143,14 @@ func (w *World) Render(playerID, playerName string, vw, vh int) string {
 	return b.String()
 }
 
-// todo this could be optimized as a lookup table of coord => distance
-func dist(x1, y1, x2, y2 int, max float64) float64 {
-	xd := math.Pow(float64(x2-x1), 2) * 1.25
-	yd := math.Pow(float64(y2-y1), 2) * 1.25
-	return math.Sqrt(xd+yd) / max
+var memStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#444444"))
+
+func (w *World) RenderForMemory(x, y int) string {
+	ic := Coord{x, y}
+	if e, ok := w.entities[ic]; ok {
+		return memStyle.Render(e.String())
+	}
+	return tileMap[Environment][Space]
 }
 
 func (w *World) randomAvailableCoord() (Coord, error) {
@@ -165,8 +165,16 @@ func (w *World) randomAvailableCoord() (Coord, error) {
 	return Coord{}, errors.New("couldn't place random coord")
 }
 
-func (w *World) inBounds(loc Coord) bool {
-	return loc.X >= 0 && loc.X < w.W && loc.Y >= 0 && loc.Y < w.H
+func (w *World) InBounds(x, y int) bool {
+	return x >= 0 && x < w.W && y >= 0 && y < w.H
+}
+
+func (w *World) IsOpaque(x, y int) bool {
+	loc := Coord{x, y}
+	if e, ok := w.entities[loc]; ok {
+		return !e.SeeThrough()
+	}
+	return false
 }
 
 func (w *World) available(loc Coord) bool {
