@@ -25,7 +25,7 @@ func (c Coord) Add(delta Coord) Coord {
 type World struct {
 	sync.RWMutex
 	W, H     int
-	entities map[Coord]*entity
+	entities map[Coord]*entity  // the actual map of tiles
 	players  map[string]*entity // map of player id => entity that points to that player
 	events   []string
 }
@@ -47,7 +47,7 @@ func (w *World) ApplyCommand(a Action, playerID, playerName string) {
 	case Up, Right, Down, Left:
 		w.movePlayer(e, a)
 	case Disconnect:
-		w.removePlayer(playerID, e.player.loc)
+		w.disconnectPlayer(playerID, e.player.loc)
 	default:
 		fmt.Println("unknown action:", a)
 	}
@@ -61,7 +61,10 @@ func (w *World) getOrCreatePlayer(playerID, playerName string) *entity {
 		c, _ := w.randomAvailableCoord()
 		e = NewPlayer(playerID, c)
 		w.players[playerID] = e
-		w.entities[c] = e
+	}
+	if _, ok := w.entities[e.player.loc]; !ok {
+		// ensure that an `entities` entry exists. (this might be a reconnecting player)
+		w.entities[e.player.loc] = e
 	}
 	e.player.name = playerName
 	return e
@@ -177,9 +180,8 @@ func (w *World) EmitEvent(message string) {
 	w.events = append(w.events, message)
 }
 
-func (w *World) removePlayer(playerID string, loc Coord) {
+func (w *World) disconnectPlayer(playerID string, loc Coord) {
 	w.Lock()
 	defer w.Unlock()
 	delete(w.entities, loc)
-	delete(w.players, playerID)
 }
