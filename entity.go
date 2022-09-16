@@ -17,21 +17,41 @@ func (e entity) Color() string {
 	if e.player != nil {
 		return "#FDC300"
 	}
-	if e.subclass == Floor {
+	switch e.subclass {
+	case Floor:
 		return "#444444"
+	case Water:
+		return "#315F8C"
+	case Grass:
+		return "#2B8C28"
+	case Rock:
+		return "#616267"
+	default:
+		return "#fdffcc"
 	}
-	return "#fdffcc"
 }
 
 func (e entity) SeeThrough() bool {
 	if e.class != Environment {
 		return true
 	}
-	return e.subclass == Floor
+	return e.subclass != WallBlock
 }
 
 func (e entity) Memorable() bool {
 	return e.class != Being
+}
+
+func (e entity) Walkable() bool {
+	if e.class != Environment {
+		return false
+	}
+	switch e.subclass {
+	case WallBlock, Water:
+		return false
+	default:
+		return true
+	}
 }
 
 type Class int
@@ -54,6 +74,9 @@ const (
 	WallCornerNW
 	Floor
 	Space
+	Water
+	Grass
+	Rock
 )
 
 var tileMap = map[Class]map[Subclass]string{
@@ -64,6 +87,9 @@ var tileMap = map[Class]map[Subclass]string{
 		WallCornerNW: "◢ ",
 		Floor:        "..",
 		Space:        "  ",
+		Water:        "≈≈",
+		Grass:        "''",
+		Rock:         "XX",
 		Default:      "猫",
 	},
 	Item: {

@@ -22,20 +22,31 @@ func (c Coord) Add(delta Coord) Coord {
 
 type World struct {
 	sync.RWMutex
-	W, H     int
-	entities map[Coord]*entity  // the actual map of tiles
-	players  map[string]*entity // map of player id => entity that points to that player
-	events   []string
+	W, H    int
+	wMap    map[Coord]location // the actual map of tiles
+	players map[string]*entity // map of player id => entity that points to that player
+	events  []string
+}
+
+type location []*entity
+
+func removeEntity(l location, e *entity) location {
+	ret := make(location, 0)
+	for _, ent := range l {
+		if ent != e {
+			ret = append(ret, ent)
+		}
+	}
+	return ret
 }
 
 func NewWorld() *World {
 	w := &World{
-		W:        50,
-		H:        50,
-		players:  make(map[string]*entity),
-		entities: GenerateMap(50, 50),
+		W:       500,
+		H:       500,
+		players: make(map[string]*entity),
+		wMap:    GenerateOverworld(500),
 	}
-	// TODO create a bunch of entities and populate the map
 	return w
 }
 
@@ -61,12 +72,25 @@ func (w *World) getOrCreatePlayer(playerID, playerName string) *entity {
 		w.players[playerID] = e
 	}
 	e.player.name = playerName
-	if _, ok := w.entities[e.player.loc]; !ok {
-		// ensure that an `entities` entry exists. (this might be a reconnecting player)
-		w.entities[e.player.loc] = e
+	if !w.isPlayerAtLocation(e, e.player.loc) {
+		// ensure that a `wMap` entry exists. (this might be a reconnecting player)
+		w.wMap[e.player.loc] = append(w.wMap[e.player.loc], e)
 		e.player.See(w)
 	}
 	return e
+}
+
+func (w *World) isPlayerAtLocation(e *entity, c Coord) bool {
+	loc, ok := w.wMap[c]
+	if !ok {
+		return false
+	}
+	for _, ent := range loc {
+		if ent == e {
+			return true
+		}
+	}
+	return false
 }
 
 func (w *World) movePlayer(e *entity, a Action) {
@@ -82,11 +106,11 @@ func (w *World) movePlayer(e *entity, a Action) {
 		delta.X = -1
 	}
 	newLoc := e.player.loc.Add(delta)
-	if w.InBounds(newLoc.X, newLoc.Y) && w.available(newLoc) {
-		w.Lock()
-		defer w.Unlock()
-		w.entities[newLoc] = e
-		delete(w.entities, e.player.loc)
+	w.Lock()
+	defer w.Unlock()
+	if w.InBounds(newLoc.X, newLoc.Y) && w.walkable(newLoc) {
+		w.wMap[newLoc] = append(w.wMap[newLoc], e)
+		w.wMap[e.player.loc] = removeEntity(w.wMap[e.player.loc], e)
 		e.player.loc = newLoc
 		e.player.See(w)
 	}
@@ -124,8 +148,8 @@ func (w *World) Render(playerID, playerName string, vw, vh int) string {
 				if inPastView && !inView {
 					b.WriteString(memString)
 				} else if inView {
-					if e, ok := w.entities[ic]; ok {
-						ent = e
+					if loc, ok := w.wMap[ic]; ok {
+						ent = loc[len(loc)-1]
 					} else {
 						ent = &entity{class: Environment, subclass: Floor}
 					}
@@ -147,8 +171,8 @@ var memStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#444444"))
 
 func (w *World) RenderForMemory(x, y int) string {
 	ic := Coord{x, y}
-	if e, ok := w.entities[ic]; ok {
-		return memStyle.Render(e.String())
+	if loc, ok := w.wMap[ic]; ok {
+		return memStyle.Render(loc[len(loc)-1].String())
 	}
 	return tileMap[Environment][Space]
 }
@@ -157,7 +181,7 @@ func (w *World) randomAvailableCoord() (Coord, error) {
 	tries := 1000
 	for tries > 0 {
 		c := Coord{rand.Intn(w.W), rand.Intn(w.H)}
-		if _, ok := w.entities[c]; !ok {
+		if w.walkable(c) {
 			return c, nil
 		}
 		tries--
@@ -170,26 +194,39 @@ func (w *World) InBounds(x, y int) bool {
 }
 
 func (w *World) IsOpaque(x, y int) bool {
-	loc := Coord{x, y}
-	if e, ok := w.entities[loc]; ok {
-		return !e.SeeThrough()
+	c := Coord{x, y}
+	if loc, ok := w.wMap[c]; ok {
+		for _, e := range loc {
+			if !e.SeeThrough() {
+				return true
+			}
+		}
 	}
 	return false
 }
 
-func (w *World) available(loc Coord) bool {
-	w.RLock()
-	defer w.RUnlock()
-	_, ok := w.entities[loc]
-	return !ok
+func (w *World) walkable(c Coord) bool {
+	loc, ok := w.wMap[c]
+	if !ok {
+		return true
+	}
+	for _, e := range loc {
+		if !e.Walkable() {
+			return false
+		}
+	}
+	return true
 }
 
 func (w *World) EmitEvent(message string) {
 	w.events = append(w.events, message)
 }
 
-func (w *World) disconnectPlayer(playerID string, loc Coord) {
+func (w *World) disconnectPlayer(playerID string, c Coord) {
+	ent := w.getOrCreatePlayer(playerID, "")
 	w.Lock()
 	defer w.Unlock()
-	delete(w.entities, loc)
+	if loc, ok := w.wMap[c]; ok {
+		w.wMap[c] = removeEntity(loc, ent)
+	}
 }

@@ -3,13 +3,13 @@ module github.com/dustmason/nicefort
 go 1.19
 
 require (
+	github.com/PieterD/WorldGen v0.0.0-20120619051650-4fec4e0ffec6
+	github.com/aquilax/go-perlin v1.1.0
 	github.com/charmbracelet/bubbles v0.14.0
 	github.com/charmbracelet/bubbletea v0.22.1
 	github.com/charmbracelet/lipgloss v0.5.0
 	github.com/charmbracelet/wish v0.5.0
 	github.com/gliderlabs/ssh v0.3.4
-	github.com/meshiest/go-dungeon v0.0.0-20160809210039-1d1d1e7596b8
-	github.com/norendren/go-fov v1.0.1
 	golang.org/x/crypto v0.0.0-20220307211146-efcb8507fb70
 )
 
