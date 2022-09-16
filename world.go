@@ -13,17 +13,11 @@ type Coord struct {
 	X, Y int
 }
 
-func (c Coord) Add(delta Coord) Coord {
-	return Coord{
-		X: c.X + delta.X,
-		Y: c.Y + delta.Y,
-	}
-}
-
 type World struct {
 	sync.RWMutex
-	W, H    int
-	wMap    map[Coord]location // the actual map of tiles
+	W, H int
+	// wMap    map[Coord]location // the actual map of tiles
+	wMap    []location         // the actual map of tiles
 	players map[string]*entity // map of player id => entity that points to that player
 	events  []string
 }
@@ -40,12 +34,12 @@ func removeEntity(l location, e *entity) location {
 	return ret
 }
 
-func NewWorld() *World {
+func NewWorld(size int) *World {
 	w := &World{
-		W:       500,
-		H:       500,
+		W:       size,
+		H:       size,
 		players: make(map[string]*entity),
-		wMap:    GenerateOverworld(500),
+		wMap:    GenerateOverworld(size),
 	}
 	return w
 }
@@ -56,7 +50,7 @@ func (w *World) ApplyCommand(a Action, playerID, playerName string) {
 	case Up, Right, Down, Left:
 		w.movePlayer(e, a)
 	case Disconnect:
-		w.disconnectPlayer(playerID, e.player.loc)
+		w.disconnectPlayer(playerID, e.player.loc.X, e.player.loc.Y)
 	default:
 		fmt.Println("unknown action:", a)
 	}
@@ -67,25 +61,22 @@ func (w *World) getOrCreatePlayer(playerID, playerName string) *entity {
 	defer w.Unlock()
 	e, ok := w.players[playerID]
 	if !ok {
-		c, _ := w.randomAvailableCoord()
-		e = NewPlayer(playerID, c)
+		x, y, _ := w.randomAvailableCoord()
+		e = NewPlayer(playerID, Coord{x, y})
 		w.players[playerID] = e
 	}
 	e.player.name = playerName
-	if !w.isPlayerAtLocation(e, e.player.loc) {
+	if !w.isPlayerAtLocation(e, e.player.loc.X, e.player.loc.Y) {
 		// ensure that a `wMap` entry exists. (this might be a reconnecting player)
-		w.wMap[e.player.loc] = append(w.wMap[e.player.loc], e)
+		i := w.index(e.player.loc.X, e.player.loc.Y)
+		w.wMap[i] = append(w.wMap[i], e)
 		e.player.See(w)
 	}
 	return e
 }
 
-func (w *World) isPlayerAtLocation(e *entity, c Coord) bool {
-	loc, ok := w.wMap[c]
-	if !ok {
-		return false
-	}
-	for _, ent := range loc {
+func (w *World) isPlayerAtLocation(e *entity, x, y int) bool {
+	for _, ent := range w.location(x, y) {
 		if ent == e {
 			return true
 		}
@@ -94,24 +85,26 @@ func (w *World) isPlayerAtLocation(e *entity, c Coord) bool {
 }
 
 func (w *World) movePlayer(e *entity, a Action) {
-	delta := Coord{}
+	nx := e.player.loc.X
+	ny := e.player.loc.Y
 	switch a {
 	case Up:
-		delta.Y = -1
+		ny += -1
 	case Right:
-		delta.X = 1
+		nx += 1
 	case Down:
-		delta.Y = 1
+		ny += 1
 	case Left:
-		delta.X = -1
+		nx += -1
 	}
-	newLoc := e.player.loc.Add(delta)
 	w.Lock()
 	defer w.Unlock()
-	if w.InBounds(newLoc.X, newLoc.Y) && w.walkable(newLoc) {
-		w.wMap[newLoc] = append(w.wMap[newLoc], e)
-		w.wMap[e.player.loc] = removeEntity(w.wMap[e.player.loc], e)
-		e.player.loc = newLoc
+	if w.InBounds(nx, ny) && w.walkable(nx, ny) {
+		newIndex := w.index(nx, ny)
+		oldIndex := w.index(e.player.loc.X, e.player.loc.Y)
+		w.wMap[newIndex] = append(w.wMap[newIndex], e)
+		w.wMap[oldIndex] = removeEntity(w.wMap[oldIndex], e)
+		e.player.loc = Coord{nx, ny}
 		e.player.See(w)
 	}
 }
@@ -129,7 +122,7 @@ func (w *World) Render(playerID, playerName string, vw, vh int) string {
 	w.RLock()
 	defer w.RUnlock()
 	var b strings.Builder
-	b.Grow(vw*vh + vh)
+	b.Grow(vw*vh*2 + vh) // *2 because double-width chars and +vh because line-breaks
 	left := x - vw/2
 	right := x + vw/2
 	top := y - vh/2
@@ -148,11 +141,8 @@ func (w *World) Render(playerID, playerName string, vw, vh int) string {
 				if inPastView && !inView {
 					b.WriteString(memString)
 				} else if inView {
-					if loc, ok := w.wMap[ic]; ok {
-						ent = loc[len(loc)-1]
-					} else {
-						ent = &entity{class: Environment, subclass: Floor}
-					}
+					loc := w.location(ix, iy)
+					ent = loc[len(loc)-1]
 					b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ent.Color())).Render(ent.String()))
 				} else { // not in past or current view
 					b.WriteString(tileMap[Environment][Space])
@@ -170,23 +160,27 @@ func (w *World) Render(playerID, playerName string, vw, vh int) string {
 var memStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#444444"))
 
 func (w *World) RenderForMemory(x, y int) string {
-	ic := Coord{x, y}
-	if loc, ok := w.wMap[ic]; ok {
-		return memStyle.Render(loc[len(loc)-1].String())
+	loc := w.location(x, y)
+	// iterate backwards to get topmost memorable entity first
+	for i := len(loc) - 1; i >= 0; i-- {
+		if loc[i].Memorable() {
+			return memStyle.Render(loc[i].String())
+		}
 	}
 	return tileMap[Environment][Space]
 }
 
-func (w *World) randomAvailableCoord() (Coord, error) {
+func (w *World) randomAvailableCoord() (int, int, error) {
 	tries := 1000
 	for tries > 0 {
-		c := Coord{rand.Intn(w.W), rand.Intn(w.H)}
-		if w.walkable(c) {
-			return c, nil
+		x := rand.Intn(w.W)
+		y := rand.Intn(w.H)
+		if w.walkable(x, y) {
+			return x, y, nil
 		}
 		tries--
 	}
-	return Coord{}, errors.New("couldn't place random coord")
+	return 0, 0, errors.New("couldn't place random coord")
 }
 
 func (w *World) InBounds(x, y int) bool {
@@ -194,23 +188,16 @@ func (w *World) InBounds(x, y int) bool {
 }
 
 func (w *World) IsOpaque(x, y int) bool {
-	c := Coord{x, y}
-	if loc, ok := w.wMap[c]; ok {
-		for _, e := range loc {
-			if !e.SeeThrough() {
-				return true
-			}
+	for _, e := range w.location(x, y) {
+		if !e.SeeThrough() {
+			return true
 		}
 	}
 	return false
 }
 
-func (w *World) walkable(c Coord) bool {
-	loc, ok := w.wMap[c]
-	if !ok {
-		return true
-	}
-	for _, e := range loc {
+func (w *World) walkable(x, y int) bool {
+	for _, e := range w.location(x, y) {
 		if !e.Walkable() {
 			return false
 		}
@@ -218,15 +205,22 @@ func (w *World) walkable(c Coord) bool {
 	return true
 }
 
+func (w *World) index(x, y int) int {
+	return y*w.W + x
+}
+
+func (w *World) location(x, y int) location {
+	return w.wMap[w.index(x, y)]
+}
+
 func (w *World) EmitEvent(message string) {
 	w.events = append(w.events, message)
 }
 
-func (w *World) disconnectPlayer(playerID string, c Coord) {
+func (w *World) disconnectPlayer(playerID string, x, y int) {
 	ent := w.getOrCreatePlayer(playerID, "")
 	w.Lock()
 	defer w.Unlock()
-	if loc, ok := w.wMap[c]; ok {
-		w.wMap[c] = removeEntity(loc, ent)
-	}
+	i := w.index(x, y)
+	w.wMap[i] = removeEntity(w.wMap[i], ent)
 }

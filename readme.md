@@ -6,7 +6,7 @@ A multiplayer dungeon crawler that's played over `ssh`.
 Try the live dev server (pubkey auth required):
 
 ```shell
-ssh nicefort.fly.dev
+ssh -p 2222 nicefort.fly.dev
 ```
 
 ### Run Locally
@@ -36,5 +36,4 @@ ssh -p 23234 jordan@127.0.0.1
 - doors
 - on disk (or remote) persistence of world state
 - multiple levels
-- switch from `map[coord]*entity` to `[]*entity` for `World.entity` for better perf
 - `look`: highlight items / monsters to see desc

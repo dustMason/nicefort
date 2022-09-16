@@ -4,12 +4,13 @@ import (
 	"github.com/PieterD/WorldGen/worldgen2"
 )
 
-func GenerateOverworld(size int) map[Coord]location {
+func GenerateOverworld(size int) []location {
 	wg := worldgen2.NewWorld(3, 3)
 	fSize := float64(size)
-	m := make(map[Coord]location)
+	m := make([]location, size*size)
 	x := 0
 	y := 0
+	ind := 0
 	for y < size {
 		for x < size {
 			i := wg.GetHeight_Island(float64(x)/fSize, float64(y)/fSize)
@@ -21,8 +22,10 @@ func GenerateOverworld(size int) map[Coord]location {
 			} else {
 				ent = &entity{class: Environment, subclass: Rock}
 			}
-			m[Coord{x, y}] = location{ent}
+			// m[Coord{x, y}] = location{ent}
+			m[ind] = location{ent}
 			x++
+			ind++
 		}
 		x = 0
 		y++
