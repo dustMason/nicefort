@@ -1,4 +1,4 @@
-package main
+package ui
 
 import (
 	"fmt"
@@ -9,19 +9,10 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/dustmason/nicefort/world"
 	"strconv"
 	"strings"
 	"time"
-)
-
-type Action int
-
-const (
-	Up Action = iota
-	Right
-	Down
-	Left
-	Disconnect
 )
 
 type Mode int
@@ -39,7 +30,7 @@ const (
 
 type UIModel struct {
 	mode          Mode
-	world         *World
+	world         *world.World
 	playerID      string
 	playerName    string
 	width         int
@@ -54,7 +45,7 @@ type UIModel struct {
 	inventoryMode InventoryMode
 }
 
-func NewUIModel(w *World, playerID, playerName string, width, height int) UIModel {
+func NewUIModel(w *world.World, playerID, playerName string, width, height int) UIModel {
 	ti := textinput.New()
 	ti.Placeholder = "chat"
 	ti.CharLimit = 156
@@ -199,16 +190,16 @@ func (m UIModel) handleMapModeMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, m.keys.Up):
 			m.lastKey = "↑"
-			m.world.ApplyCommand(Up, m.playerID)
+			m.world.ApplyCommand(world.Up, m.playerID)
 		case key.Matches(msg, m.keys.Down):
 			m.lastKey = "↓"
-			m.world.ApplyCommand(Down, m.playerID)
+			m.world.ApplyCommand(world.Down, m.playerID)
 		case key.Matches(msg, m.keys.Left):
 			m.lastKey = "←"
-			m.world.ApplyCommand(Left, m.playerID)
+			m.world.ApplyCommand(world.Left, m.playerID)
 		case key.Matches(msg, m.keys.Right):
 			m.lastKey = "→"
-			m.world.ApplyCommand(Right, m.playerID)
+			m.world.ApplyCommand(world.Right, m.playerID)
 		case key.Matches(msg, m.keys.Help):
 			m.help.ShowAll = !m.help.ShowAll
 		case key.Matches(msg, m.keys.FocusChat):
@@ -256,7 +247,7 @@ func (m UIModel) handleInventoryModeMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 					break
 				}
 				if i, ok := m.recipes.SelectedItem().(recipeListItem); ok {
-					if fok, selectedRecipe := FindRecipe(i.id); fok {
+					if fok, selectedRecipe := world.FindRecipe(i.id); fok {
 						if m.world.DoRecipe(m.playerID, selectedRecipe) {
 							m.inventory.SetRows(m.createInventoryTableRows())
 						}
@@ -308,7 +299,7 @@ func (m UIModel) createInventoryTableRows() []table.Row {
 	ii := m.world.PlayerInventory(m.playerID)
 	rows := make([]table.Row, len(ii))
 	for ind, i := range ii {
-		rows[ind] = table.Row{i.item.name, strconv.Itoa(i.quantity), fmt.Sprintf("%.1f", i.Weight())}
+		rows[ind] = table.Row{i.Item.Name, strconv.Itoa(i.Quantity), fmt.Sprintf("%.1f", i.Weight())}
 	}
 	return rows
 }
@@ -337,7 +328,7 @@ func (m UIModel) createRecipeListItems() []list.Item {
 	items := make([]list.Item, 0)
 	fmt.Println("available recipes", m.world.AvailableRecipes(m.playerID))
 	for _, r := range m.world.AvailableRecipes(m.playerID) {
-		items = append(items, recipeListItem{title: r.result.name, description: r.description, id: r.id})
+		items = append(items, recipeListItem{title: r.Result.Name, description: r.Description, id: r.ID})
 	}
 	return items
 }
@@ -406,7 +397,7 @@ func (m UIModel) View() string {
 			mainContents,
 			lipgloss.JoinVertical(
 				lipgloss.Left,
-				feedBoxStyle.Render(strings.Join(m.world.events, "\n\n")),
+				feedBoxStyle.Render(strings.Join(m.world.Events(), "\n\n")),
 				chatInputStyle.Render(m.chatInput.View()),
 			),
 		),

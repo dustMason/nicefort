@@ -1,4 +1,4 @@
-package main
+package world
 
 import (
 	"github.com/dustmason/nicefort/fov"
@@ -68,18 +68,18 @@ func (p *player) AllVisited() map[Coord]string {
 	return cpy
 }
 
-func (p *player) PickUp(i *item, quantity int) int {
-	canCarry := math.Floor((p.maxCarry - p.carrying) / i.weight)
+func (p *player) PickUp(i *Item, quantity int) int {
+	canCarry := math.Floor((p.maxCarry - p.carrying) / i.Weight)
 	pickedUp := int(math.Min(float64(quantity), canCarry))
 	if pickedUp > 0 {
-		if ii, ok := p.inventoryMap[i.id]; ok {
-			ii.quantity += pickedUp
+		if ii, ok := p.inventoryMap[i.ID]; ok {
+			ii.Quantity += pickedUp
 		} else {
-			nii := &InventoryItem{item: i, quantity: pickedUp}
+			nii := &InventoryItem{Item: i, Quantity: pickedUp}
 			p.inventory = append(p.inventory, nii)
-			p.inventoryMap[i.id] = nii
+			p.inventoryMap[i.ID] = nii
 		}
-		p.carrying += float64(pickedUp) * i.weight
+		p.carrying += float64(pickedUp) * i.Weight
 	}
 	// todo emit message to tell player they got a thing
 	return pickedUp

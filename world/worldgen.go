@@ -1,4 +1,4 @@
-package main
+package world
 
 import (
 	"github.com/PieterD/WorldGen/worldgen2"
@@ -28,9 +28,9 @@ func GenerateOverworld(size int) []location {
 			m[ind] = location{ent}
 			r := rand.Intn(100)
 			if r == 1 {
-				m[ind] = append(m[ind], &entity{item: &TestItem, quantity: rand.Intn(4) + 1, class: Item})
+				m[ind] = append(m[ind], &entity{item: &TestItem, quantity: rand.Intn(4) + 1, class: Thing})
 			} else if r == 2 {
-				m[ind] = append(m[ind], &entity{item: &TestItem2, quantity: 1, class: Item})
+				m[ind] = append(m[ind], &entity{item: &TestItem2, quantity: 1, class: Thing})
 			}
 
 			x++

@@ -1,4 +1,4 @@
-package main
+package world
 
 import (
 	"strconv"
@@ -10,10 +10,10 @@ import (
 // something specific, etc
 
 type Recipe struct {
-	description string
+	Description string
+	Result      *Item
+	ID          int
 	condition   condition
-	result      *item
-	id          int
 }
 
 func AvailableRecipes(im map[int]*InventoryItem, e *entity, w *World) []Recipe {
@@ -30,7 +30,7 @@ func FindRecipe(id int) (bool, Recipe) {
 	ok := false
 	found := Recipe{}
 	for _, r := range AllRecipes {
-		if r.id == id {
+		if r.ID == id {
 			ok = true
 			found = r
 			break
@@ -41,16 +41,16 @@ func FindRecipe(id int) (bool, Recipe) {
 
 type condition func(map[int]*InventoryItem, *entity, *World) (bool, map[int]int)
 
-func NewSimpleRecipe(result *item, id int, ing ...InventoryItem) Recipe {
+func NewSimpleRecipe(result *Item, id int, ing ...InventoryItem) Recipe {
 	parts := make([]string, len(ing))
 	for i, ii := range ing {
-		parts[i] = ii.item.name + " x " + strconv.Itoa(ii.quantity)
+		parts[i] = ii.Item.Name + " x " + strconv.Itoa(ii.Quantity)
 	}
 	return Recipe{
-		description: strings.Join(parts, ", "),
+		Description: strings.Join(parts, ", "),
 		condition:   ingredientsCondition(ing...),
-		result:      result,
-		id:          id,
+		Result:      result,
+		ID:          id,
 	}
 }
 
@@ -65,12 +65,12 @@ func (r *Recipe) Do(inv map[int]*InventoryItem, e *entity, w *World) (bool, map[
 		return false, inv
 	}
 	for id, q := range cost {
-		inv[id].quantity -= q
+		inv[id].Quantity -= q
 	}
-	if _, ok := inv[r.result.id]; !ok {
-		inv[r.result.id] = &InventoryItem{item: r.result}
+	if _, ok := inv[r.Result.ID]; !ok {
+		inv[r.Result.ID] = &InventoryItem{Item: r.Result}
 	}
-	inv[r.result.id].quantity += 1
+	inv[r.Result.ID].Quantity += 1
 	return true, inv
 }
 
@@ -78,11 +78,11 @@ func ingredientsCondition(ingredients ...InventoryItem) condition {
 	return func(inventoryMap map[int]*InventoryItem, e *entity, w *World) (bool, map[int]int) {
 		out := make(map[int]int)
 		for _, i := range ingredients {
-			pi, ok := inventoryMap[i.item.id]
-			if !ok || pi.quantity < i.quantity {
+			pi, ok := inventoryMap[i.Item.ID]
+			if !ok || pi.Quantity < i.Quantity {
 				return false, out
 			}
-			out[i.item.id] = i.quantity
+			out[i.Item.ID] = i.Quantity
 		}
 		return true, out
 	}
@@ -90,11 +90,11 @@ func ingredientsCondition(ingredients ...InventoryItem) condition {
 
 var AllRecipes = []Recipe{
 	NewSimpleRecipe(&TestItem3, 1,
-		InventoryItem{item: &TestItem, quantity: 3},
-		InventoryItem{item: &TestItem2, quantity: 1},
+		InventoryItem{Item: &TestItem, Quantity: 3},
+		InventoryItem{Item: &TestItem2, Quantity: 1},
 	),
 	NewSimpleRecipe(&TestItem4, 2,
-		InventoryItem{item: &TestItem3, quantity: 1},
-		InventoryItem{item: &TestItem, quantity: 10},
+		InventoryItem{Item: &TestItem3, Quantity: 1},
+		InventoryItem{Item: &TestItem, Quantity: 10},
 	),
 }

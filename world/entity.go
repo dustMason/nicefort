@@ -1,10 +1,10 @@
-package main
+package world
 
 type entity struct {
 	class    Class
 	subclass Subclass
 	player   *player
-	item     *item
+	item     *Item
 	quantity int
 }
 
@@ -70,7 +70,7 @@ const Unknown = "? "
 
 const (
 	Being Class = iota
-	Item
+	Thing
 	Environment
 )
 
@@ -101,7 +101,7 @@ var tileMap = map[Class]map[Subclass]string{
 		Rock:         "XX",
 		Default:      "猫",
 	},
-	Item: {
+	Thing: {
 		Default: "i ",
 	},
 	Being: {

@@ -1,4 +1,4 @@
-package main
+package world
 
 import (
 	"errors"
@@ -9,14 +9,23 @@ import (
 	"sync"
 )
 
+type Action int
+
+const (
+	Up Action = iota
+	Right
+	Down
+	Left
+	Disconnect
+)
+
 type Coord struct {
 	X, Y int
 }
 
 type World struct {
 	sync.RWMutex
-	W, H int
-	// wMap    map[Coord]location // the actual map of tiles
+	W, H    int
 	wMap    []location         // the actual map of tiles
 	players map[string]*entity // map of player id => entity that points to that player
 	events  []string
@@ -49,8 +58,6 @@ func (w *World) ApplyCommand(a Action, playerID string) {
 	switch a {
 	case Up, Right, Down, Left:
 		w.movePlayer(e, a)
-	case Disconnect:
-		w.disconnectPlayer(e)
 	default:
 		fmt.Println("unknown action:", a)
 	}
@@ -188,6 +195,10 @@ func (w *World) RenderForMemory(x, y int) string {
 	return tileMap[Environment][Space]
 }
 
+func (w *World) Events() []string {
+	return w.events
+}
+
 func (w *World) randomAvailableCoord() (int, int, error) {
 	tries := 1000
 	for tries > 0 {
@@ -284,4 +295,10 @@ func (w *World) DoRecipe(playerID string, r Recipe) bool {
 		return true
 	}
 	return false
+}
+
+func (w *World) DisconnectPlayer(playerID string) {
+	e := w.getPlayer(playerID)
+	w.disconnectPlayer(e)
+	w.EmitEvent(fmt.Sprintf("%s left.", e.player.name))
 }
