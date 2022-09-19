@@ -190,16 +190,16 @@ func (m UIModel) handleMapModeMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, m.keys.Up):
 			m.lastKey = "↑"
-			m.world.ApplyCommand(world.Up, m.playerID)
+			m.world.MovePlayer(0, -1, m.playerID)
 		case key.Matches(msg, m.keys.Down):
 			m.lastKey = "↓"
-			m.world.ApplyCommand(world.Down, m.playerID)
+			m.world.MovePlayer(0, 1, m.playerID)
 		case key.Matches(msg, m.keys.Left):
 			m.lastKey = "←"
-			m.world.ApplyCommand(world.Left, m.playerID)
+			m.world.MovePlayer(-1, 0, m.playerID)
 		case key.Matches(msg, m.keys.Right):
 			m.lastKey = "→"
-			m.world.ApplyCommand(world.Right, m.playerID)
+			m.world.MovePlayer(1, 0, m.playerID)
 		case key.Matches(msg, m.keys.Help):
 			m.help.ShowAll = !m.help.ShowAll
 		case key.Matches(msg, m.keys.FocusChat):
@@ -326,7 +326,6 @@ func (m UIModel) createRecipeList() list.Model {
 
 func (m UIModel) createRecipeListItems() []list.Item {
 	items := make([]list.Item, 0)
-	fmt.Println("available recipes", m.world.AvailableRecipes(m.playerID))
 	for _, r := range m.world.AvailableRecipes(m.playerID) {
 		items = append(items, recipeListItem{title: r.Result.Name, description: r.Description, id: r.ID})
 	}

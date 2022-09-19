@@ -4,19 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/dustmason/nicefort/util"
 	"math/rand"
 	"strings"
 	"sync"
-)
-
-type Action int
-
-const (
-	Up Action = iota
-	Right
-	Down
-	Left
-	Disconnect
+	"time"
 )
 
 type Coord struct {
@@ -25,10 +17,11 @@ type Coord struct {
 
 type World struct {
 	sync.RWMutex
-	W, H    int
-	wMap    []location         // the actual map of tiles
-	players map[string]*entity // map of player id => entity that points to that player
-	events  []string
+	W, H       int
+	wMap       []location         // the actual map of tiles
+	players    map[string]*entity // map of player id => entity that points to that player
+	activeNPCs []*entity
+	events     []string
 }
 
 type location []*entity
@@ -50,16 +43,39 @@ func NewWorld(size int) *World {
 		players: make(map[string]*entity),
 		wMap:    GenerateOverworld(size),
 	}
+	go w.runTicker()
 	return w
 }
 
-func (w *World) ApplyCommand(a Action, playerID string) {
+func (w *World) tick(t time.Time) {
+	for _, e := range w.activeNPCs {
+		e.npc.Tick(t, w, e)
+	}
+}
+
+func (w *World) runTicker() {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	for t := range ticker.C {
+		w.tick(t)
+	}
+}
+
+func (w *World) MovePlayer(dx, dy int, playerID string) {
 	e := w.getPlayer(playerID)
-	switch a {
-	case Up, Right, Down, Left:
-		w.movePlayer(e, a)
-	default:
-		fmt.Println("unknown action:", a)
+	w.movePlayer(e, dx, dy)
+}
+
+func (w *World) MoveNPC(dx, dy int, e *entity) {
+	nx := e.npc.loc.X + dx
+	ny := e.npc.loc.Y + dy
+	w.Lock()
+	defer w.Unlock()
+	if w.InBounds(nx, ny) && w.walkable(nx, ny) { // todo some NPCs can move over different types of terrain
+		newIndex := w.index(nx, ny)
+		oldIndex := w.index(e.npc.loc.X, e.npc.loc.Y)
+		w.wMap[newIndex] = append(w.wMap[newIndex], e)
+		w.wMap[oldIndex] = removeEntity(w.wMap[oldIndex], e)
+		e.npc.loc = Coord{nx, ny}
 	}
 }
 
@@ -78,8 +94,42 @@ func (w *World) getOrCreatePlayer(playerID, playerName string) *entity {
 		i := w.index(e.player.loc.X, e.player.loc.Y)
 		w.wMap[i] = append(w.wMap[i], e)
 		e.player.See(w)
+		w.refreshActiveNPCs()
 	}
 	return e
+}
+
+func (w *World) refreshActiveNPCs() {
+	// from each player, grab all NPCs within a boundary and make sure they are all in activeNPCs
+	// set any remaining to inactive
+	found := make(map[*entity]struct{})
+	bw := 20
+	bh := 20
+	for _, e := range w.players {
+		x1 := util.ClampedInt(e.player.loc.X-bw/2, 0, w.W-1)
+		y1 := util.ClampedInt(e.player.loc.Y-bh/2, 0, w.H-1)
+		x2 := util.ClampedInt(e.player.loc.X+bw/2, 0, w.W-1)
+		y2 := util.ClampedInt(e.player.loc.Y+bh/2, 0, w.H-1)
+		ix := x1
+		iy := y1
+		for iy < y2 {
+			for ix < x2 {
+				for _, ent := range w.location(ix, iy) {
+					if ent.npc != nil {
+						found[ent] = struct{}{}
+					}
+				}
+				ix++
+			}
+			ix = x1
+			iy++
+		}
+	}
+	newActiveNPCs := make([]*entity, 0)
+	for e, _ := range found {
+		newActiveNPCs = append(newActiveNPCs, e)
+	}
+	w.activeNPCs = newActiveNPCs
 }
 
 func (w *World) getPlayer(playerID string) *entity {
@@ -98,19 +148,9 @@ func (w *World) isPlayerAtLocation(e *entity, x, y int) bool {
 	return false
 }
 
-func (w *World) movePlayer(e *entity, a Action) {
-	nx := e.player.loc.X
-	ny := e.player.loc.Y
-	switch a {
-	case Up:
-		ny += -1
-	case Right:
-		nx += 1
-	case Down:
-		ny += 1
-	case Left:
-		nx += -1
-	}
+func (w *World) movePlayer(e *entity, dx, dy int) {
+	nx := e.player.loc.X + dx
+	ny := e.player.loc.Y + dy
 	w.Lock()
 	defer w.Unlock()
 	newIndex := w.index(nx, ny)
@@ -123,18 +163,18 @@ func (w *World) movePlayer(e *entity, a Action) {
 			}
 			return
 		}
+		// todo handle attackable
 		if w.walkable(nx, ny) {
 			oldIndex := w.index(e.player.loc.X, e.player.loc.Y)
 			w.wMap[newIndex] = append(w.wMap[newIndex], e)
 			w.wMap[oldIndex] = removeEntity(w.wMap[oldIndex], e)
 			e.player.loc = Coord{nx, ny}
 			e.player.See(w)
+			w.refreshActiveNPCs()
 			return
 		}
 	}
 }
-
-// todo World needs it's own ticker, running in a loop, that moves NPEs
 
 func (w *World) RenderMap(playerID, playerName string, vw, vh int) string {
 	vw = vw / 2 // each tile is 2 chars wide
@@ -262,6 +302,7 @@ func (w *World) disconnectPlayer(e *entity) {
 	w.wMap[i] = removeEntity(w.wMap[i], e)
 }
 
+// todo refactor this to return some value type (map of string[string]?) or a struct
 func (w *World) RenderPlayerSidebar(id string, name string) string {
 	var b strings.Builder
 	e := w.getOrCreatePlayer(id, name)
@@ -301,4 +342,7 @@ func (w *World) DisconnectPlayer(playerID string) {
 	e := w.getPlayer(playerID)
 	w.disconnectPlayer(e)
 	w.EmitEvent(fmt.Sprintf("%s left.", e.player.name))
+	w.Lock()
+	defer w.Unlock()
+	w.refreshActiveNPCs()
 }

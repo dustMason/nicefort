@@ -19,7 +19,6 @@ ssh -p 23234 jordan@127.0.0.1
 ### TODO
 - scrolling ui for chat / status messages
 - monsters
-  - ticker in `world` to handle moving NPEs
   - fighting
   - debouncing system for movement/fighting
 - better map view

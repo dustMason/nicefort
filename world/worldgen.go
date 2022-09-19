@@ -27,10 +27,12 @@ func GenerateOverworld(size int) []location {
 			// testing
 			m[ind] = location{ent}
 			r := rand.Intn(100)
-			if r == 1 {
+			if r == 1 && i > 0 {
 				m[ind] = append(m[ind], &entity{item: &TestItem, quantity: rand.Intn(4) + 1, class: Thing})
-			} else if r == 2 {
+			} else if r == 2 && i > 0 {
 				m[ind] = append(m[ind], &entity{item: &TestItem2, quantity: 1, class: Thing})
+			} else if r == 3 && i > 0 {
+				m[ind] = append(m[ind], &entity{class: Being, npc: NewRabbit(x, y)})
 			}
 
 			x++
@@ -39,8 +41,6 @@ func GenerateOverworld(size int) []location {
 		x = 0
 		y++
 	}
-
-	// todo iterate the map and populate with plants and monsters
 
 	return m
 }

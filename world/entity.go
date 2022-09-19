@@ -4,8 +4,10 @@ type entity struct {
 	class    Class
 	subclass Subclass
 	player   *player
+	npc      *NPC
 	item     *Item
 	quantity int
+	// todo move the loc field here
 }
 
 func (e entity) String() string {
