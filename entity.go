@@ -4,11 +4,16 @@ type entity struct {
 	class    Class
 	subclass Subclass
 	player   *player
+	item     *item
+	quantity int
 }
 
 func (e entity) String() string {
 	if e.player != nil {
 		return " " + string(e.player.name[0])
+	}
+	if e.item != nil {
+		return e.item.String()
 	}
 	return tile(e.class, e.subclass)
 }
@@ -52,6 +57,10 @@ func (e entity) Walkable() bool {
 	default:
 		return true
 	}
+}
+
+func (e entity) Pickupable() bool {
+	return e.item != nil
 }
 
 type Class int

@@ -51,7 +51,7 @@ func DisconnectHandlerMiddleware(w *World) wish.Middleware {
 			pubKey := string(gossh.MarshalAuthorizedKey(s.PublicKey()))
 			playerName := s.User()
 			sh(s)
-			w.ApplyCommand(Disconnect, pubKey, playerName)
+			w.ApplyCommand(Disconnect, pubKey)
 			w.EmitEvent(fmt.Sprintf("%s left.", playerName))
 		}
 	}
@@ -65,8 +65,6 @@ func teaHandler(w *World) bm.Handler {
 			return nil, nil
 		}
 		pubKey := string(gossh.MarshalAuthorizedKey(s.PublicKey()))
-		fmt.Println("-> connected", s.User(), pubKey)
-
 		m := NewUIModel(w, pubKey, s.User(), pty.Window.Width, pty.Window.Height)
 		w.EmitEvent(fmt.Sprintf("%s joined.", s.User()))
 		return m, []tea.ProgramOption{tea.WithAltScreen()}

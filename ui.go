@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -21,17 +24,34 @@ const (
 	Disconnect
 )
 
+type Mode int
+type InventoryMode int
+
+const (
+	Map Mode = iota
+	Inventory
+)
+
+const (
+	InventoryList InventoryMode = iota
+	RecipeList
+)
+
 type UIModel struct {
-	world      *World
-	playerID   string
-	playerName string
-	width      int
-	height     int
-	quitting   bool
-	keys       keyMap
-	lastKey    string
-	help       help.Model
-	chatInput  textinput.Model
+	mode          Mode
+	world         *World
+	playerID      string
+	playerName    string
+	width         int
+	height        int
+	quitting      bool
+	keys          keyMap
+	lastKey       string
+	help          help.Model
+	chatInput     textinput.Model
+	inventory     table.Model
+	recipes       list.Model
+	inventoryMode InventoryMode
 }
 
 func NewUIModel(w *World, playerID, playerName string, width, height int) UIModel {
@@ -39,28 +59,34 @@ func NewUIModel(w *World, playerID, playerName string, width, height int) UIMode
 	ti.Placeholder = "chat"
 	ti.CharLimit = 156
 	ti.Width = 27
+
 	return UIModel{
-		world:      w,
-		playerID:   playerID,
-		playerName: playerName,
-		width:      width,
-		height:     height,
-		keys:       keys,
-		help:       help.New(),
-		chatInput:  ti,
+		mode:          Map,
+		world:         w,
+		playerID:      playerID,
+		playerName:    playerName,
+		width:         width,
+		height:        height,
+		keys:          keys,
+		help:          help.New(),
+		chatInput:     ti,
+		inventory:     table.New(),
+		inventoryMode: InventoryList,
 	}
 }
 
 type keyMap struct {
-	Up        key.Binding
-	Down      key.Binding
-	Left      key.Binding
-	Right     key.Binding
-	Help      key.Binding
-	FocusChat key.Binding
-	Enter     key.Binding
-	Esc       key.Binding
-	Quit      key.Binding
+	Up             key.Binding
+	Down           key.Binding
+	Left           key.Binding
+	Right          key.Binding
+	Help           key.Binding
+	FocusChat      key.Binding
+	FocusInventory key.Binding
+	Enter          key.Binding
+	Tab            key.Binding
+	Esc            key.Binding
+	Quit           key.Binding
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
@@ -99,8 +125,15 @@ var keys = keyMap{
 		key.WithKeys("t"),
 		key.WithHelp("t", "focus chat input"),
 	),
+	FocusInventory: key.NewBinding(
+		key.WithKeys("i"),
+		key.WithHelp("i", "show inventory browser"),
+	),
 	Enter: key.NewBinding(
 		key.WithKeys("enter"),
+	),
+	Tab: key.NewBinding(
+		key.WithKeys("tab"),
 	),
 	Esc: key.NewBinding(
 		key.WithKeys("esc"),
@@ -134,7 +167,10 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.chatInput.Focused() {
 		return m.handleChatModeMessage(msg)
 	}
-	return m.handleNormalModeMessage(msg)
+	if m.mode == Inventory {
+		return m.handleInventoryModeMessage(msg)
+	}
+	return m.handleMapModeMessage(msg)
 }
 
 func (m UIModel) handleChatModeMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -155,37 +191,155 @@ func (m UIModel) handleChatModeMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	m.chatInput, cmd = m.chatInput.Update(msg)
 	return m, cmd
-
 }
 
-func (m UIModel) handleNormalModeMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m UIModel) handleMapModeMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, m.keys.Up):
 			m.lastKey = "↑"
-			m.world.ApplyCommand(Up, m.playerID, m.playerName)
+			m.world.ApplyCommand(Up, m.playerID)
 		case key.Matches(msg, m.keys.Down):
 			m.lastKey = "↓"
-			m.world.ApplyCommand(Down, m.playerID, m.playerName)
+			m.world.ApplyCommand(Down, m.playerID)
 		case key.Matches(msg, m.keys.Left):
 			m.lastKey = "←"
-			m.world.ApplyCommand(Left, m.playerID, m.playerName)
+			m.world.ApplyCommand(Left, m.playerID)
 		case key.Matches(msg, m.keys.Right):
 			m.lastKey = "→"
-			m.world.ApplyCommand(Right, m.playerID, m.playerName)
+			m.world.ApplyCommand(Right, m.playerID)
 		case key.Matches(msg, m.keys.Help):
 			m.help.ShowAll = !m.help.ShowAll
 		case key.Matches(msg, m.keys.FocusChat):
 			if !m.chatInput.Focused() {
 				m.chatInput.Focus()
 			}
+		case key.Matches(msg, m.keys.FocusInventory):
+			m.inventory = m.createInventoryTable()
+			m.recipes = m.createRecipeList()
+			m.mode = Inventory
 		case key.Matches(msg, m.keys.Quit):
 			m.quitting = true
 			return m, tea.Quit
 		}
 	}
 	return m, nil
+}
+
+func (m UIModel) handleInventoryModeMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch {
+		case key.Matches(msg, m.keys.Esc):
+			if m.recipes.FilterState() == list.Filtering {
+				break
+			}
+			m.mode = Map
+			return m, nil
+		case key.Matches(msg, m.keys.Tab):
+			if m.inventoryMode == InventoryList {
+				m.inventoryMode = RecipeList
+				m.inventory.Blur()
+			} else {
+				m.inventoryMode = InventoryList
+				m.inventory.Focus()
+			}
+		case key.Matches(msg, m.keys.Enter):
+			if m.inventoryMode == InventoryList {
+				i, _ := strconv.Atoi(m.inventory.SelectedRow()[0])
+				m.world.ActivateItem(m.playerID, i)
+				m.mode = Map
+			} else {
+				if m.recipes.FilterState() == list.Filtering {
+					break
+				}
+				if i, ok := m.recipes.SelectedItem().(recipeListItem); ok {
+					if fok, selectedRecipe := FindRecipe(i.id); fok {
+						if m.world.DoRecipe(m.playerID, selectedRecipe) {
+							m.inventory.SetRows(m.createInventoryTableRows())
+						}
+						cmd = m.recipes.SetItems(m.createRecipeListItems())
+						var cmd2 tea.Cmd
+						m.recipes, cmd2 = m.recipes.Update(TickMsg{})
+						return m, tea.Batch(cmd, cmd2)
+					}
+				}
+			}
+		}
+	}
+	if m.inventory.Focused() {
+		m.inventory, cmd = m.inventory.Update(msg)
+	} else {
+		m.recipes, cmd = m.recipes.Update(msg)
+	}
+	return m, cmd
+}
+
+func (m UIModel) createInventoryTable() table.Model {
+	columns := []table.Column{
+		{Title: "Item", Width: 45},
+		{Title: "Qty", Width: 5},
+		{Title: "Weight", Width: 8},
+	}
+
+	t := table.New(
+		table.WithColumns(columns),
+		table.WithRows(m.createInventoryTableRows()),
+		table.WithFocused(true),
+		// table.WithHeight(7),
+	)
+	s := table.DefaultStyles()
+	s.Header = s.Header.
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("240")).
+		BorderBottom(true).
+		Bold(false)
+	s.Selected = s.Selected.
+		Foreground(lipgloss.Color("229")).
+		Background(lipgloss.Color("57")).
+		Bold(false)
+	t.SetStyles(s)
+	return t
+}
+
+func (m UIModel) createInventoryTableRows() []table.Row {
+	ii := m.world.PlayerInventory(m.playerID)
+	rows := make([]table.Row, len(ii))
+	for ind, i := range ii {
+		rows[ind] = table.Row{i.item.name, strconv.Itoa(i.quantity), fmt.Sprintf("%.1f", i.Weight())}
+	}
+	return rows
+}
+
+type recipeListItem struct {
+	title       string
+	description string
+	id          int
+}
+
+func (i recipeListItem) Title() string       { return i.title }
+func (i recipeListItem) Description() string { return i.description }
+func (i recipeListItem) FilterValue() string { return i.title }
+
+func (m UIModel) createRecipeList() list.Model {
+	d := list.NewDefaultDelegate()
+	lm := list.New(m.createRecipeListItems(), d, 50, 20)
+	lm.Title = "Crafting Recipes"
+	lm.SetShowHelp(false)
+	lm.SetStatusBarItemName("recipe", "recipes")
+	lm.DisableQuitKeybindings()
+	return lm
+}
+
+func (m UIModel) createRecipeListItems() []list.Item {
+	items := make([]list.Item, 0)
+	fmt.Println("available recipes", m.world.AvailableRecipes(m.playerID))
+	for _, r := range m.world.AvailableRecipes(m.playerID) {
+		items = append(items, recipeListItem{title: r.result.name, description: r.description, id: r.id})
+	}
+	return items
 }
 
 var (
@@ -198,15 +352,14 @@ var (
 			BorderRight(true).
 			BorderBottom(true)
 
-	mapBoxStyle = lipgloss.NewStyle().
-			Inherit(dialogBoxStyle).
-			Border(lipgloss.RoundedBorder()) // .Width(60).Height(30)
-
 	feedBoxStyle = lipgloss.NewStyle().
-			Inherit(dialogBoxStyle).Width(20) // .Height(27)
+			Inherit(dialogBoxStyle).Width(20)
 
 	chatInputStyle = lipgloss.NewStyle().
 			Inherit(dialogBoxStyle).Height(1).Width(20)
+
+	playerInfoStyle = lipgloss.NewStyle().
+			Inherit(dialogBoxStyle).Width(20)
 
 	statusBarStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.AdaptiveColor{Light: "#343433", Dark: "#C1C6B2"}).
@@ -217,18 +370,40 @@ var (
 )
 
 func (m UIModel) View() string {
-	mapWidth := m.width - 24
-	mapHeight := m.height - 4
+	mainWidth := m.width - 20 - 4 - 20 - 4 // minus both sidebars and borders
+	mainHeight := m.height - 4
 
 	// local copy, because Width/Height mutate it. this avoids `concurrent map write` panics
-	mbStyle := lipgloss.NewStyle().Inherit(mapBoxStyle).Width(mapWidth).Height(mapHeight)
+	piStyle := lipgloss.NewStyle().Inherit(playerInfoStyle).Height(mainHeight)
+	mainStyle := lipgloss.NewStyle().Inherit(dialogBoxStyle).Width(mainWidth).Height(mainHeight)
+	inventoryPaneStyle := lipgloss.NewStyle().Width(mainWidth / 2).Height(mainHeight)
+	recipePaneStyle := lipgloss.NewStyle().Width(mainWidth / 2).Height(mainHeight)
+	if m.inventoryMode == InventoryList {
+		recipePaneStyle.Faint(true)
+	} else {
+		inventoryPaneStyle.Faint(true)
+	}
+
+	var mainContents string
+	if m.mode == Map {
+		mainContents = mainStyle.Render(m.world.RenderMap(m.playerID, m.playerName, mainWidth, mainHeight))
+	} else if m.mode == Inventory {
+		mainContents = lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			inventoryPaneStyle.Render(
+				m.recipes.Styles.Title.Render("Inventory")+"\n\n"+m.inventory.View(),
+			),
+			recipePaneStyle.Render(m.recipes.View()),
+		)
+	}
 
 	doc := strings.Builder{}
 	ui := lipgloss.JoinVertical(
 		lipgloss.Left,
 		lipgloss.JoinHorizontal(
 			lipgloss.Top,
-			mbStyle.Render(m.world.Render(m.playerID, m.playerName, mapWidth, mapHeight)),
+			piStyle.Render(m.world.RenderPlayerSidebar(m.playerID, m.playerName)),
+			mainContents,
 			lipgloss.JoinVertical(
 				lipgloss.Left,
 				feedBoxStyle.Render(strings.Join(m.world.events, "\n\n")),

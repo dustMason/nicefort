@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/PieterD/WorldGen/worldgen2"
+	"math/rand"
 )
 
 func GenerateOverworld(size int) []location {
@@ -22,8 +23,16 @@ func GenerateOverworld(size int) []location {
 			} else {
 				ent = &entity{class: Environment, subclass: Rock}
 			}
-			// m[Coord{x, y}] = location{ent}
+
+			// testing
 			m[ind] = location{ent}
+			r := rand.Intn(100)
+			if r == 1 {
+				m[ind] = append(m[ind], &entity{item: &TestItem, quantity: rand.Intn(4) + 1, class: Item})
+			} else if r == 2 {
+				m[ind] = append(m[ind], &entity{item: &TestItem2, quantity: 1, class: Item})
+			}
+
 			x++
 			ind++
 		}

@@ -44,13 +44,13 @@ func NewWorld(size int) *World {
 	return w
 }
 
-func (w *World) ApplyCommand(a Action, playerID, playerName string) {
-	e := w.getOrCreatePlayer(playerID, playerName)
+func (w *World) ApplyCommand(a Action, playerID string) {
+	e := w.getPlayer(playerID)
 	switch a {
 	case Up, Right, Down, Left:
 		w.movePlayer(e, a)
 	case Disconnect:
-		w.disconnectPlayer(playerID, e.player.loc.X, e.player.loc.Y)
+		w.disconnectPlayer(e)
 	default:
 		fmt.Println("unknown action:", a)
 	}
@@ -72,6 +72,13 @@ func (w *World) getOrCreatePlayer(playerID, playerName string) *entity {
 		w.wMap[i] = append(w.wMap[i], e)
 		e.player.See(w)
 	}
+	return e
+}
+
+func (w *World) getPlayer(playerID string) *entity {
+	w.Lock()
+	defer w.Unlock()
+	e, _ := w.players[playerID]
 	return e
 }
 
@@ -99,19 +106,30 @@ func (w *World) movePlayer(e *entity, a Action) {
 	}
 	w.Lock()
 	defer w.Unlock()
-	if w.InBounds(nx, ny) && w.walkable(nx, ny) {
-		newIndex := w.index(nx, ny)
-		oldIndex := w.index(e.player.loc.X, e.player.loc.Y)
-		w.wMap[newIndex] = append(w.wMap[newIndex], e)
-		w.wMap[oldIndex] = removeEntity(w.wMap[oldIndex], e)
-		e.player.loc = Coord{nx, ny}
-		e.player.See(w)
+	newIndex := w.index(nx, ny)
+	if w.InBounds(nx, ny) {
+		if ent, ok := w.pickupable(nx, ny); ok {
+			took := e.player.PickUp(ent.item, ent.quantity)
+			ent.quantity -= took
+			if ent.quantity == 0 {
+				w.wMap[newIndex] = removeEntity(w.wMap[newIndex], ent)
+			}
+			return
+		}
+		if w.walkable(nx, ny) {
+			oldIndex := w.index(e.player.loc.X, e.player.loc.Y)
+			w.wMap[newIndex] = append(w.wMap[newIndex], e)
+			w.wMap[oldIndex] = removeEntity(w.wMap[oldIndex], e)
+			e.player.loc = Coord{nx, ny}
+			e.player.See(w)
+			return
+		}
 	}
 }
 
 // todo World needs it's own ticker, running in a loop, that moves NPEs
 
-func (w *World) Render(playerID, playerName string, vw, vh int) string {
+func (w *World) RenderMap(playerID, playerName string, vw, vh int) string {
 	vw = vw / 2 // each tile is 2 chars wide
 	ply := w.getOrCreatePlayer(playerID, playerName).player
 	c := ply.loc
@@ -205,6 +223,15 @@ func (w *World) walkable(x, y int) bool {
 	return true
 }
 
+func (w *World) pickupable(x, y int) (*entity, bool) {
+	for _, e := range w.location(x, y) {
+		if e.Pickupable() {
+			return e, true
+		}
+	}
+	return nil, false
+}
+
 func (w *World) index(x, y int) int {
 	return y*w.W + x
 }
@@ -217,10 +244,44 @@ func (w *World) EmitEvent(message string) {
 	w.events = append(w.events, message)
 }
 
-func (w *World) disconnectPlayer(playerID string, x, y int) {
-	ent := w.getOrCreatePlayer(playerID, "")
+func (w *World) disconnectPlayer(e *entity) {
 	w.Lock()
 	defer w.Unlock()
-	i := w.index(x, y)
-	w.wMap[i] = removeEntity(w.wMap[i], ent)
+	i := w.index(e.player.loc.X, e.player.loc.Y)
+	w.wMap[i] = removeEntity(w.wMap[i], e)
+}
+
+func (w *World) RenderPlayerSidebar(id string, name string) string {
+	var b strings.Builder
+	e := w.getOrCreatePlayer(id, name)
+	b.WriteString(name + "\n")
+	b.WriteString(fmt.Sprintf("Pack: %.1f / %d\n", e.player.carrying, int(e.player.maxCarry)))
+	b.WriteString(fmt.Sprintf("Health: %d / %d\n", e.player.health, e.player.maxHealth))
+	b.WriteString(fmt.Sprintf("Cash: $%d\n", e.player.money))
+	return b.String()
+}
+
+func (w *World) ActivateItem(playerID string, inventoryIndex int) {
+	// todo get the item from the player's inventory and activate it!
+	// call a method on the player to consumer the item if the activate function returns true
+}
+
+func (w *World) PlayerInventory(playerID string) []*InventoryItem {
+	e := w.getPlayer(playerID)
+	return e.player.Inventory()
+}
+
+func (w *World) AvailableRecipes(playerID string) []Recipe {
+	e := w.getPlayer(playerID)
+	return AvailableRecipes(e.player.inventoryMap, e, w)
+}
+
+func (w *World) DoRecipe(playerID string, r Recipe) bool {
+	e := w.getPlayer(playerID)
+	ok, newInv := r.Do(e.player.inventoryMap, e, w)
+	if ok {
+		e.player.ReplaceInventory(newInv)
+		return true
+	}
+	return false
 }
