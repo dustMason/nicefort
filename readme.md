@@ -3,7 +3,7 @@ Nice Fort
 
 A multiplayer dungeon crawler that's played over `ssh`.
 
-Try the live dev server (pubkey auth required):
+Try the live dev server (pubkey auth required). Note that you will need a terminal that supports "truecolor" such as iTerm2.
 
 ```shell
 ssh -p 2222 nicefort.fly.dev
@@ -17,12 +17,14 @@ ssh -p 23234 jordan@127.0.0.1
 ```
 
 ### TODO
-- multiplayer niceties
+- ui
   - scrolling ui for chat / status messages
   - show location of other players in sidebar (arrow and distance)
+  - `g` to pick up entity player is standing on instead of moving towards
+  - can i do mouse support?
 - survival gameplay
-  - base creation (campfire?)
-- can i do mouse support?
+  - tools (axe, shovel, etc)
+  - placing crafted items
 - monsters
   - fighting
   - debouncing system for movement/fighting
@@ -30,8 +32,5 @@ ssh -p 23234 jordan@127.0.0.1
 - better map view
   - don't scroll with each move. fit the level on the screen
   - current player renders as `@`, other players use first initial
-- player stats?
-- character creation?
 - on disk (or remote) persistence of world state
-- multiple levels
 - `look`: highlight items / monsters to see desc

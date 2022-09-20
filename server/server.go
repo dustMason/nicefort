@@ -10,6 +10,7 @@ import (
 	"github.com/dustmason/nicefort/ui"
 	"github.com/dustmason/nicefort/world"
 	"github.com/gliderlabs/ssh"
+	"github.com/muesli/termenv"
 	gossh "golang.org/x/crypto/ssh"
 	"log"
 	"os"
@@ -33,7 +34,7 @@ func NewServer(w *world.World) *Server {
 		wish.WithAddress(fmt.Sprintf("%s:%d", host, port)),
 		wish.WithHostKeyPath(".ssh/term_info_ed25519"),
 		wish.WithMiddleware(
-			bm.Middleware(teaHandler(w)),
+			bm.MiddlewareWithColorProfile(teaHandler(w), termenv.TrueColor),
 			DisconnectHandlerMiddleware(w),
 			lm.Middleware(),
 		),
