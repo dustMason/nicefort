@@ -24,9 +24,8 @@ type Point struct {
 	X, Y int
 }
 
-// GridSet is an efficient and idiomatic way to implement sets in go, as an empty struct takes up no space
-// and nothing more than a set of keys is needed to store the range of visible cells
-type GridSet map[Point]struct{}
+// GridSet is maps points to distance as a percentage of radius (0 < n < 1)
+type GridSet map[Point]float64
 
 // View is the item which stores the visible set of cells any time it is called. This should be called any time
 // a player's position is updated
@@ -42,8 +41,8 @@ func New() *View {
 // Compute takes a GridMap implementation along with the X and Y coordinates representing a player's current
 // position and will internally update the visibile set of tiles within the provided radius `r`
 func (v *View) Compute(grid GridMap, px, py, radius int) {
-	v.Visible = make(map[Point]struct{})
-	v.Visible[Point{px, py}] = struct{}{}
+	v.Visible = make(map[Point]float64)
+	v.Visible[Point{px, py}] = 0.
 	for i := 1; i <= 8; i++ {
 		v.fov(grid, px, py, 1, 0, 1, i, radius)
 	}
@@ -72,7 +71,7 @@ func (v *View) fov(grid GridMap, px, py, dist int, lowSlope, highSlope float64, 
 		if grid.InBounds(mapx, mapy) && distTo(px, py, mapx, mapy) < rad {
 			// As long as a tile is within the bounds of the map, if we visit it at all, it is considered visible
 			// That's the efficiency of shadowcasting, you just dont visit tiles that aren't visible
-			v.Visible[Point{mapx, mapy}] = struct{}{}
+			v.Visible[Point{mapx, mapy}] = float64(dist) / float64(rad)
 		}
 
 		if grid.InBounds(mapx, mapy) && grid.IsOpaque(mapx, mapy) {
@@ -95,12 +94,12 @@ func (v *View) fov(grid GridMap, px, py, dist int, lowSlope, highSlope float64, 
 }
 
 // IsVisible takes in a set of X,Y coordinates and will consult the visible set (as a gridSet) to determine
-// whether that tile is visible.
-func (v *View) IsVisible(x, y int) bool {
-	if _, ok := v.Visible[Point{x, y}]; ok {
-		return true
+// whether that tile is visible. if visible it also returns the distance
+func (v *View) IsVisible(x, y int) (bool, float64) {
+	if d, ok := v.Visible[Point{x, y}]; ok {
+		return true, d
 	}
-	return false
+	return false, 0.
 }
 
 // distHeightXY performs some bitwise and operations to handle the transposition of the depth and height values

@@ -7,9 +7,12 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/dustmason/nicefort/events"
 	"github.com/dustmason/nicefort/world"
+	"github.com/muesli/reflow/wordwrap"
 	"strconv"
 	"strings"
 	"time"
@@ -39,6 +42,7 @@ type UIModel struct {
 	keys          keyMap
 	lastKey       string
 	help          help.Model
+	chat          *viewport.Model
 	chatInput     textinput.Model
 	inventory     table.Model
 	recipes       list.Model
@@ -48,8 +52,14 @@ type UIModel struct {
 func NewUIModel(w *world.World, playerID, playerName string, width, height int) UIModel {
 	ti := textinput.New()
 	ti.Placeholder = "chat"
-	ti.CharLimit = 156
-	ti.Width = 27
+	ti.CharLimit = 240
+	ti.Width = 17
+
+	chat := viewport.New(20, height-5) // -5 for chatInput
+	w.OnEvent(func(events string) {
+		chat.SetContent(wordwrap.String(events, 20))
+		chat.GotoBottom()
+	})
 
 	return UIModel{
 		mode:          Map,
@@ -60,6 +70,7 @@ func NewUIModel(w *world.World, playerID, playerName string, width, height int) 
 		height:        height,
 		keys:          keys,
 		help:          help.New(),
+		chat:          &chat,
 		chatInput:     ti,
 		inventory:     table.New(),
 		inventoryMode: InventoryList,
@@ -154,6 +165,7 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.height = msg.Height
 		m.width = msg.Width
+		m.chat.Height = msg.Height - 5
 	}
 	if m.chatInput.Focused() {
 		return m.handleChatModeMessage(msg)
@@ -171,7 +183,7 @@ func (m UIModel) handleChatModeMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, m.keys.Enter):
 			if m.chatInput.Focused() {
-				m.world.EmitEvent(fmt.Sprintf("%s: %s", m.playerName, m.chatInput.Value()))
+				m.world.Chat(events.Info, m.playerName, m.chatInput.Value())
 				m.chatInput.SetValue("")
 				m.chatInput.Blur()
 			}
@@ -269,6 +281,7 @@ func (m UIModel) handleInventoryModeMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m UIModel) createInventoryTable() table.Model {
+	// todo fix these widths to handle flexible viewport width
 	columns := []table.Column{
 		{Title: "Item", Width: 45},
 		{Title: "Qty", Width: 5},
@@ -333,39 +346,34 @@ func (m UIModel) createRecipeListItems() []list.Item {
 }
 
 var (
-	dialogBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#874BFD")).
-			Padding(0).
-			BorderTop(true).
-			BorderLeft(true).
-			BorderRight(true).
-			BorderBottom(true)
+	borderedBoxStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("#874BFD")).
+				Padding(0).
+				BorderTop(true).
+				BorderLeft(true).
+				BorderRight(true).
+				BorderBottom(true)
 
-	feedBoxStyle = lipgloss.NewStyle().
-			Inherit(dialogBoxStyle).Width(20)
-
-	chatInputStyle = lipgloss.NewStyle().
-			Inherit(dialogBoxStyle).Height(1).Width(20)
-
-	playerInfoStyle = lipgloss.NewStyle().
-			Inherit(dialogBoxStyle).Width(20)
-
-	statusBarStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.AdaptiveColor{Light: "#343433", Dark: "#C1C6B2"}).
-			Background(lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#353533"}).
-			Width(84)
-
+	playerInfoStyle   = lipgloss.NewStyle().Width(20)
+	playerEventsStyle = lipgloss.NewStyle().Height(4)
+	chatPaneStyle     = lipgloss.NewStyle().Width(20)
+	chatInputStyle    = lipgloss.NewStyle().Inherit(borderedBoxStyle).Height(1).Width(20)
+	statusBarStyle    = lipgloss.NewStyle().
+				Foreground(lipgloss.AdaptiveColor{Light: "#343433", Dark: "#C1C6B2"}).
+				Background(lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#353533"})
 	docStyle = lipgloss.NewStyle().Padding(0)
 )
 
 func (m UIModel) View() string {
-	mainWidth := m.width - 20 - 4 - 20 - 4 // minus both sidebars and borders
-	mainHeight := m.height - 4
+	mainWidth := m.width - 20 - 2 - 20 - 2 // minus both sidebars and borders
+	mainHeight := m.height - 4 - 4
 
 	// local copy, because Width/Height mutate it. this avoids `concurrent map write` panics
-	piStyle := lipgloss.NewStyle().Inherit(playerInfoStyle).Height(mainHeight)
-	mainStyle := lipgloss.NewStyle().Inherit(dialogBoxStyle).Width(mainWidth).Height(mainHeight)
+	piStyle := lipgloss.NewStyle().Inherit(playerInfoStyle).Height(m.height - 1) // -1 for statusbar
+	peStyle := lipgloss.NewStyle().Inherit(playerEventsStyle).Width(mainWidth).MaxHeight(4)
+	mainStyle := lipgloss.NewStyle().Inherit(borderedBoxStyle).Width(mainWidth).Height(mainHeight)
+	sbStyle := lipgloss.NewStyle().Inherit(statusBarStyle).Width(m.width)
 	inventoryPaneStyle := lipgloss.NewStyle().Width(mainWidth / 2).Height(mainHeight)
 	recipePaneStyle := lipgloss.NewStyle().Width(mainWidth / 2).Height(mainHeight)
 	if m.inventoryMode == InventoryList {
@@ -393,14 +401,18 @@ func (m UIModel) View() string {
 		lipgloss.JoinHorizontal(
 			lipgloss.Top,
 			piStyle.Render(m.world.RenderPlayerSidebar(m.playerID, m.playerName)),
-			mainContents,
 			lipgloss.JoinVertical(
 				lipgloss.Left,
-				feedBoxStyle.Render(strings.Join(m.world.Events(), "\n\n")),
+				peStyle.Render(m.world.RenderPlayerEvents(m.playerID)),
+				mainContents,
+			),
+			lipgloss.JoinVertical(
+				lipgloss.Left,
+				m.chat.View(),
 				chatInputStyle.Render(m.chatInput.View()),
 			),
 		),
-		statusBarStyle.Render(m.lastKey),
+		sbStyle.Render(m.lastKey), // todo use status bar for short help text
 	)
 	doc.WriteString(ui)
 	return docStyle.Render(doc.String())

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/dustmason/nicefort/events"
 	"github.com/dustmason/nicefort/util"
 	"math/rand"
 	"strings"
@@ -27,7 +28,8 @@ type World struct {
 	wMap       []location         // the actual map of tiles
 	players    map[string]*entity // map of player id => entity that points to that player
 	activeNPCs []*entity
-	events     []string
+	events     *events.EventList
+	onEvent    func(string)
 }
 
 // SizeX SizeY IsPassable and OOB to satisfy the dmap interface
@@ -65,6 +67,7 @@ func NewWorld(size int) *World {
 		H:       size,
 		players: make(map[string]*entity),
 		wMap:    GenerateOverworld(size),
+		events:  events.NewEventList(100),
 	}
 	go w.runTicker()
 	return w
@@ -147,7 +150,7 @@ func (w *World) refreshActiveNPCs() {
 		}
 	}
 	newActiveNPCs := make([]*entity, 0)
-	for e, _ := range found {
+	for e := range found {
 		newActiveNPCs = append(newActiveNPCs, e)
 	}
 	w.activeNPCs = newActiveNPCs
@@ -190,12 +193,20 @@ func (w *World) movePlayer(e *entity, dx, dy int) {
 			return
 		}
 		if ent, ok := w.attackable(nx, ny); ok {
-			ent.npc.Attacked(e, 10)
+			damage, dead, _ := ent.npc.Attacked(e, 10)
+			if dead {
+				e.player.Event(events.Success, fmt.Sprintf("You killed the %s", ent.npc.Name))
+				i := w.index(ent.npc.loc.X, ent.npc.loc.Y)
+				w.wMap[i] = removeEntity(w.wMap[i], ent)
+				// todo handle drops
+			} else {
+				e.player.Event(events.Success, fmt.Sprintf("You hit the %s for %d", ent.npc.Name, damage))
+			}
 			return
 		}
 		if w.walkable(nx, ny) && !w.occupied(nx, ny) {
-			oldx, oldy := e.player.GetLocation()
-			oldIndex := w.index(oldx, oldy)
+			oldX, oldY := e.player.GetLocation()
+			oldIndex := w.index(oldX, oldY)
 			w.wMap[newIndex] = append(w.wMap[newIndex], e)
 			w.wMap[oldIndex] = removeEntity(w.wMap[oldIndex], e)
 			e.player.SetLocation(nx, ny, now)
@@ -207,7 +218,8 @@ func (w *World) movePlayer(e *entity, dx, dy int) {
 }
 
 var blackSpace = tileMap[Environment][Space][0]
-var memStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#444444"))
+var memColor = "#444444"
+var memStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(memColor))
 
 func (w *World) RenderMap(playerID, playerName string, vw, vh int) string {
 	vw = vw / 2 // each tile is 2 chars wide
@@ -232,7 +244,7 @@ func (w *World) RenderMap(playerID, playerName string, vw, vh int) string {
 				b.WriteString(blackSpace)
 			} else {
 				ic := Coord{ix, iy}
-				inView := ply.CanSee(ix, iy)
+				inView, dist := ply.CanSee(ix, iy)
 				memString, inPastView := seen[ic]
 				if inPastView && !inView {
 					b.WriteString(memString)
@@ -242,8 +254,8 @@ func (w *World) RenderMap(playerID, playerName string, vw, vh int) string {
 					bg := loc[0]
 					b.WriteString(
 						lipgloss.NewStyle().
-							Foreground(lipgloss.Color(ent.ForegroundColor())).
-							Background(lipgloss.Color(bg.BackgroundColor())).
+							Foreground(lipgloss.Color(ent.ForegroundColor(dist))).
+							Background(lipgloss.Color(bg.BackgroundColor(dist))).
 							Render(ent.String()),
 					)
 				} else { // not in past or current view
@@ -268,10 +280,6 @@ func (w *World) RenderForMemory(x, y int) string {
 		}
 	}
 	return blackSpace
-}
-
-func (w *World) Events() []string {
-	return w.events
 }
 
 func (w *World) randomAvailableCoord() (int, int, error) {
@@ -350,8 +358,18 @@ func (w *World) coordinates(i int) (int, int) {
 	return x, y
 }
 
-func (w *World) EmitEvent(message string) {
-	w.events = append(w.events, message)
+func (w *World) OnEvent(f func(string)) {
+	w.onEvent = f
+}
+
+func (w *World) Event(kind events.Class, message string) {
+	w.events.Add(kind, message)
+	w.onEvent(w.events.Render())
+}
+
+func (w *World) Chat(kind events.Class, subject, message string) {
+	w.events.AddWithSubject(kind, message, subject)
+	w.onEvent(w.events.Render())
 }
 
 func (w *World) disconnectPlayer(e *entity) {
@@ -401,8 +419,13 @@ func (w *World) DoRecipe(playerID string, r Recipe) bool {
 func (w *World) DisconnectPlayer(playerID string) {
 	e := w.getPlayer(playerID)
 	w.disconnectPlayer(e)
-	w.EmitEvent(fmt.Sprintf("%s left.", e.player.name))
+	w.Event(events.Warning, fmt.Sprintf("%s left.", e.player.name))
 	w.Lock()
 	defer w.Unlock()
 	w.refreshActiveNPCs()
+}
+
+func (w *World) RenderPlayerEvents(playerID string) string {
+	e := w.getPlayer(playerID)
+	return e.player.Events()
 }

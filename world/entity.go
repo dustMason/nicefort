@@ -2,6 +2,7 @@ package world
 
 import (
 	"github.com/lucasb-eyer/go-colorful"
+	"math"
 )
 
 type entity struct {
@@ -17,6 +18,7 @@ type entity struct {
 }
 
 var black, _ = colorful.Hex("#000000")
+var dkGrey, _ = colorful.Hex(memColor)
 
 func (e entity) String() string {
 	if e.player != nil {
@@ -31,12 +33,13 @@ func (e entity) String() string {
 	return tile(e.class, e.subclass, e.variant)
 }
 
-func (e entity) ForegroundColor() string {
-	return e.baseColor().Hex()
+func (e entity) ForegroundColor(dist float64) string {
+	return e.baseColor().BlendLab(dkGrey, dist).Hex()
 }
 
-func (e entity) BackgroundColor() string {
-	return e.baseColor().BlendLab(black, 0.6).Hex()
+func (e entity) BackgroundColor(dist float64) string {
+	blend := math.Min(0.2+dist, 1.0)
+	return e.baseColor().BlendLab(black, blend).Hex()
 }
 
 func (e entity) SeeThrough() bool {

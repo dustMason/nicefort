@@ -1,6 +1,7 @@
 package world
 
 import (
+	"github.com/dustmason/nicefort/events"
 	"github.com/dustmason/nicefort/fov"
 	"math"
 	"sync"
@@ -17,6 +18,7 @@ type player struct {
 	inventoryMap map[int]*InventoryItem // map of item id => inventoryItem
 	inventory    []*InventoryItem
 	moveSpeed    float64 // 0 < n < 1.0
+	events       *events.EventList
 
 	// counters
 	maxCarry  float64
@@ -43,6 +45,7 @@ func NewPlayer(id string, c Coord) *entity {
 		health:       20,
 		money:        0,
 		moveSpeed:    0.2,
+		events:       events.NewEventList(4),
 	}
 	return &entity{class: Being, player: p}
 }
@@ -56,7 +59,7 @@ func (p *player) See(w *World) {
 	}
 }
 
-func (p *player) CanSee(x, y int) bool {
+func (p *player) CanSee(x, y int) (bool, float64) {
 	p.RLock()
 	defer p.RUnlock()
 	return p.view.IsVisible(x, y)
@@ -122,4 +125,12 @@ func (p *player) GetLocation() (int, int) {
 
 func (p *player) CanMove(now time.Time) bool {
 	return now.Sub(p.lastMoved) > time.Duration(int(500.*p.moveSpeed))*time.Millisecond
+}
+
+func (p *player) Event(kind events.Class, message string) {
+	p.events.Add(kind, message)
+}
+
+func (p *player) Events() string {
+	return p.events.Render()
 }

@@ -18,16 +18,17 @@ ssh -p 23234 jordan@127.0.0.1
 
 ### TODO
 - ui
-  - scrolling ui for chat / status messages
+  - fix layout bug with inventory table
   - show location of other players in sidebar (arrow and distance)
   - `g` to pick up entity player is standing on instead of moving towards
   - can i do mouse support?
+  - render event types with color/style
 - survival gameplay
   - tools (axe, shovel, etc)
   - placing crafted items
+  - diagonal movement instead of only manhattan
 - monsters
-  - fighting
-  - debouncing system for movement/fighting
+  - debouncing system for fighting
   - all visible NPCs show in sidebar (name, health)
 - better map view
   - don't scroll with each move. fit the level on the screen

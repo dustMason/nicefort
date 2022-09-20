@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/wish"
 	bm "github.com/charmbracelet/wish/bubbletea"
 	lm "github.com/charmbracelet/wish/logging"
+	"github.com/dustmason/nicefort/events"
 	"github.com/dustmason/nicefort/ui"
 	"github.com/dustmason/nicefort/world"
 	"github.com/gliderlabs/ssh"
@@ -67,7 +68,7 @@ func teaHandler(w *world.World) bm.Handler {
 		}
 		pubKey := string(gossh.MarshalAuthorizedKey(s.PublicKey()))
 		m := ui.NewUIModel(w, pubKey, s.User(), pty.Window.Width, pty.Window.Height)
-		w.EmitEvent(fmt.Sprintf("%s joined.", s.User()))
+		w.Event(events.Warning, fmt.Sprintf("%s joined.", s.User()))
 		return m, []tea.ProgramOption{tea.WithAltScreen()}
 	}
 }

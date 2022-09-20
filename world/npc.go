@@ -23,6 +23,7 @@ type NPC struct {
 	behavior  behavior
 	loc       Coord
 	lastMoved time.Time
+	dead      bool
 }
 
 type behavior func(w *World, e *entity) // todo a function that determines what this npc does next
@@ -40,18 +41,22 @@ func (n *NPC) Tick(now time.Time, w *World, e *entity) {
 	if now.Sub(n.lastMoved).Seconds() > (1 - n.speed) {
 		n.Lock()
 		defer n.Unlock()
-		n.behavior(w, e)
-		n.lastMoved = now
+		if !n.dead {
+			n.behavior(w, e)
+			n.lastMoved = now
+		}
 	}
 }
 
-func (n *NPC) Attacked(e *entity, damage int) []*InventoryItem {
+// Attacked returns the amount of damage done, whether the npc is alive, and any items dropped
+func (n *NPC) Attacked(e *entity, damage int) (int, bool, []*InventoryItem) {
 	n.health -= damage
 	n.targets[e] = struct{}{}
 	if n.health <= 0 {
-		return n.drop
+		n.dead = true
+		return damage, true, n.drop
 	}
-	return nil
+	return damage, false, nil
 }
 
 func newNPC(name, icon string, speed float64, health int, b behavior, x, y int) *NPC {
