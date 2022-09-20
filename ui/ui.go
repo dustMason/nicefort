@@ -56,7 +56,7 @@ func NewUIModel(w *world.World, playerID, playerName string, width, height int) 
 	ti.Width = 17
 
 	chat := viewport.New(20, height-5) // -5 for chatInput
-	w.OnEvent(func(events string) {
+	w.OnEvent(playerID, func(events string) {
 		chat.SetContent(wordwrap.String(events, 20))
 		chat.GotoBottom()
 	})

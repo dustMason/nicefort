@@ -30,7 +30,7 @@ type World struct {
 	players    map[string]*entity // map of player id => entity that points to that player
 	activeNPCs []*entity
 	events     *events.EventList
-	onEvent    func(string)
+	onEvent    map[string]func(string) // map of player id => chat callback
 }
 
 // SizeX SizeY IsPassable and OOB to satisfy the dmap interface
@@ -69,6 +69,7 @@ func NewWorld(size int) *World {
 		players: make(map[string]*entity),
 		wMap:    GenerateOverworld(size),
 		events:  events.NewEventList(100),
+		onEvent: make(map[string]func(string)),
 	}
 	go w.runTicker()
 	return w
@@ -362,18 +363,24 @@ func (w *World) coordinates(i int) (int, int) {
 	return x, y
 }
 
-func (w *World) OnEvent(f func(string)) {
-	w.onEvent = f
+func (w *World) OnEvent(playerID string, f func(string)) {
+	w.onEvent[playerID] = f
 }
 
 func (w *World) Event(kind events.Class, message string) {
 	w.events.Add(kind, message)
-	w.onEvent(w.events.Render())
+	s := w.events.Render()
+	for _, f := range w.onEvent {
+		f(s)
+	}
 }
 
 func (w *World) Chat(kind events.Class, subject, message string) {
 	w.events.AddWithSubject(kind, message, subject)
-	w.onEvent(w.events.Render())
+	s := w.events.Render()
+	for _, f := range w.onEvent {
+		f(s)
+	}
 }
 
 func (w *World) disconnectPlayer(e *entity) {
@@ -400,7 +407,7 @@ func (w *World) RenderPlayerSidebar(id string, name string) string {
 			continue
 		}
 		b.WriteString(
-			compassIndicator(e.player.loc.X, e.player.loc.Y, ee.player.loc.X, ee.player.loc.Y) + " " + e.player.name + "\n",
+			compassIndicator(e.player.loc.X, e.player.loc.Y, ee.player.loc.X, ee.player.loc.Y) + " " + ee.player.name + "\n",
 		)
 	}
 
@@ -473,6 +480,7 @@ func (w *World) DisconnectPlayer(playerID string) {
 	w.Event(events.Warning, fmt.Sprintf("%s left.", e.player.name))
 	w.Lock()
 	defer w.Unlock()
+	delete(w.onEvent, playerID)
 	w.refreshActiveNPCs()
 }
 
