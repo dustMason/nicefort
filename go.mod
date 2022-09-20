@@ -4,12 +4,13 @@ go 1.19
 
 require (
 	github.com/PieterD/WorldGen v0.0.0-20120619051650-4fec4e0ffec6
-	github.com/aquilax/go-perlin v1.1.0
 	github.com/charmbracelet/bubbles v0.14.0
 	github.com/charmbracelet/bubbletea v0.22.1
 	github.com/charmbracelet/lipgloss v0.5.0
 	github.com/charmbracelet/wish v0.5.0
 	github.com/gliderlabs/ssh v0.3.4
+	github.com/japanoise/dmap v0.0.0-20181214105009-e6a50956e845
+	github.com/lucasb-eyer/go-colorful v1.2.0
 	golang.org/x/crypto v0.0.0-20220307211146-efcb8507fb70
 )
 
@@ -19,7 +20,6 @@ require (
 	github.com/caarlos0/sshmarshal v0.1.0 // indirect
 	github.com/charmbracelet/keygen v0.3.0 // indirect
 	github.com/containerd/console v1.0.3 // indirect
-	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/mattn/go-isatty v0.0.16 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.13 // indirect

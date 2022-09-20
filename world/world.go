@@ -11,8 +11,14 @@ import (
 	"time"
 )
 
+const NPCActivationRadius = 10 // approx. distance from any player where NPCs take turns
+
 type Coord struct {
 	X, Y int
+}
+
+func (c Coord) GetXY() (int, int) {
+	return c.X, c.Y
 }
 
 type World struct {
@@ -22,6 +28,23 @@ type World struct {
 	players    map[string]*entity // map of player id => entity that points to that player
 	activeNPCs []*entity
 	events     []string
+}
+
+// SizeX SizeY IsPassable and OOB to satisfy the dmap interface
+func (w *World) SizeX() int {
+	return w.W
+}
+
+func (w *World) SizeY() int {
+	return w.H
+}
+
+func (w *World) IsPassable(x int, y int) bool {
+	return w.walkable(x, y)
+}
+
+func (w *World) OOB(x int, y int) bool {
+	return !w.InBounds(x, y)
 }
 
 type location []*entity
@@ -65,17 +88,15 @@ func (w *World) MovePlayer(dx, dy int, playerID string) {
 	w.movePlayer(e, dx, dy)
 }
 
-func (w *World) MoveNPC(dx, dy int, e *entity) {
-	nx := e.npc.loc.X + dx
-	ny := e.npc.loc.Y + dy
+func (w *World) MoveNPC(x, y int, e *entity) {
 	w.Lock()
 	defer w.Unlock()
-	if w.InBounds(nx, ny) && w.walkable(nx, ny) { // todo some NPCs can move over different types of terrain
-		newIndex := w.index(nx, ny)
+	if w.InBounds(x, y) && w.walkable(x, y) && !w.occupied(x, y) { // todo some NPCs can move over different types of terrain
+		newIndex := w.index(x, y)
 		oldIndex := w.index(e.npc.loc.X, e.npc.loc.Y)
 		w.wMap[newIndex] = append(w.wMap[newIndex], e)
 		w.wMap[oldIndex] = removeEntity(w.wMap[oldIndex], e)
-		e.npc.loc = Coord{nx, ny}
+		e.npc.loc = Coord{x, y}
 	}
 }
 
@@ -89,9 +110,10 @@ func (w *World) getOrCreatePlayer(playerID, playerName string) *entity {
 		w.players[playerID] = e
 	}
 	e.player.name = playerName
-	if !w.isPlayerAtLocation(e, e.player.loc.X, e.player.loc.Y) {
+	x, y := e.player.GetLocation()
+	if !w.isPlayerAtLocation(e, x, y) {
 		// ensure that a `wMap` entry exists. (this might be a reconnecting player)
-		i := w.index(e.player.loc.X, e.player.loc.Y)
+		i := w.index(x, y)
 		w.wMap[i] = append(w.wMap[i], e)
 		e.player.See(w)
 		w.refreshActiveNPCs()
@@ -103,13 +125,12 @@ func (w *World) refreshActiveNPCs() {
 	// from each player, grab all NPCs within a boundary and make sure they are all in activeNPCs
 	// set any remaining to inactive
 	found := make(map[*entity]struct{})
-	bw := 20
-	bh := 20
 	for _, e := range w.players {
-		x1 := util.ClampedInt(e.player.loc.X-bw/2, 0, w.W-1)
-		y1 := util.ClampedInt(e.player.loc.Y-bh/2, 0, w.H-1)
-		x2 := util.ClampedInt(e.player.loc.X+bw/2, 0, w.W-1)
-		y2 := util.ClampedInt(e.player.loc.Y+bh/2, 0, w.H-1)
+		px, py := e.player.GetLocation()
+		x1 := util.ClampedInt(px-NPCActivationRadius, 0, w.W-1)
+		y1 := util.ClampedInt(py-NPCActivationRadius, 0, w.H-1)
+		x2 := util.ClampedInt(px+NPCActivationRadius, 0, w.W-1)
+		y2 := util.ClampedInt(py+NPCActivationRadius, 0, w.H-1)
 		ix := x1
 		iy := y1
 		for iy < y2 {
@@ -149,8 +170,13 @@ func (w *World) isPlayerAtLocation(e *entity, x, y int) bool {
 }
 
 func (w *World) movePlayer(e *entity, dx, dy int) {
-	nx := e.player.loc.X + dx
-	ny := e.player.loc.Y + dy
+	nx, ny := e.player.GetLocation()
+	nx += dx
+	ny += dy
+	now := time.Now()
+	if !e.player.CanMove(now) {
+		return
+	}
 	w.Lock()
 	defer w.Unlock()
 	newIndex := w.index(nx, ny)
@@ -163,12 +189,16 @@ func (w *World) movePlayer(e *entity, dx, dy int) {
 			}
 			return
 		}
-		// todo handle attackable
-		if w.walkable(nx, ny) {
-			oldIndex := w.index(e.player.loc.X, e.player.loc.Y)
+		if ent, ok := w.attackable(nx, ny); ok {
+			ent.npc.Attacked(e, 10)
+			return
+		}
+		if w.walkable(nx, ny) && !w.occupied(nx, ny) {
+			oldx, oldy := e.player.GetLocation()
+			oldIndex := w.index(oldx, oldy)
 			w.wMap[newIndex] = append(w.wMap[newIndex], e)
 			w.wMap[oldIndex] = removeEntity(w.wMap[oldIndex], e)
-			e.player.loc = Coord{nx, ny}
+			e.player.SetLocation(nx, ny, now)
 			e.player.See(w)
 			w.refreshActiveNPCs()
 			return
@@ -176,12 +206,13 @@ func (w *World) movePlayer(e *entity, dx, dy int) {
 	}
 }
 
+var blackSpace = tileMap[Environment][Space][0]
+var memStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#444444"))
+
 func (w *World) RenderMap(playerID, playerName string, vw, vh int) string {
 	vw = vw / 2 // each tile is 2 chars wide
 	ply := w.getOrCreatePlayer(playerID, playerName).player
-	c := ply.loc
-	x := c.X
-	y := c.Y
+	x, y := ply.GetLocation()
 	seen := ply.AllVisited()
 
 	w.RLock()
@@ -198,7 +229,7 @@ func (w *World) RenderMap(playerID, playerName string, vw, vh int) string {
 		for ix < right {
 			var ent *entity
 			if !w.InBounds(ix, iy) {
-				b.WriteString(tileMap[Environment][Space])
+				b.WriteString(blackSpace)
 			} else {
 				ic := Coord{ix, iy}
 				inView := ply.CanSee(ix, iy)
@@ -208,9 +239,15 @@ func (w *World) RenderMap(playerID, playerName string, vw, vh int) string {
 				} else if inView {
 					loc := w.location(ix, iy)
 					ent = loc[len(loc)-1]
-					b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ent.Color())).Render(ent.String()))
+					bg := loc[0]
+					b.WriteString(
+						lipgloss.NewStyle().
+							Foreground(lipgloss.Color(ent.ForegroundColor())).
+							Background(lipgloss.Color(bg.BackgroundColor())).
+							Render(ent.String()),
+					)
 				} else { // not in past or current view
-					b.WriteString(tileMap[Environment][Space])
+					b.WriteString(blackSpace)
 				}
 			}
 			ix++
@@ -222,8 +259,6 @@ func (w *World) RenderMap(playerID, playerName string, vw, vh int) string {
 	return b.String()
 }
 
-var memStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#444444"))
-
 func (w *World) RenderForMemory(x, y int) string {
 	loc := w.location(x, y)
 	// iterate backwards to get topmost memorable entity first
@@ -232,7 +267,7 @@ func (w *World) RenderForMemory(x, y int) string {
 			return memStyle.Render(loc[i].String())
 		}
 	}
-	return tileMap[Environment][Space]
+	return blackSpace
 }
 
 func (w *World) Events() []string {
@@ -244,7 +279,7 @@ func (w *World) randomAvailableCoord() (int, int, error) {
 	for tries > 0 {
 		x := rand.Intn(w.W)
 		y := rand.Intn(w.H)
-		if w.walkable(x, y) {
+		if w.walkable(x, y) && !w.occupied(x, y) {
 			return x, y, nil
 		}
 		tries--
@@ -274,9 +309,27 @@ func (w *World) walkable(x, y int) bool {
 	return true
 }
 
+func (w *World) occupied(x, y int) bool {
+	for _, e := range w.location(x, y) {
+		if e.class != Environment {
+			return true
+		}
+	}
+	return false
+}
+
 func (w *World) pickupable(x, y int) (*entity, bool) {
 	for _, e := range w.location(x, y) {
 		if e.Pickupable() {
+			return e, true
+		}
+	}
+	return nil, false
+}
+
+func (w *World) attackable(x int, y int) (*entity, bool) {
+	for _, e := range w.location(x, y) {
+		if e.Attackable() {
 			return e, true
 		}
 	}
@@ -291,6 +344,12 @@ func (w *World) location(x, y int) location {
 	return w.wMap[w.index(x, y)]
 }
 
+func (w *World) coordinates(i int) (int, int) {
+	x := i % w.W
+	y := i / w.H
+	return x, y
+}
+
 func (w *World) EmitEvent(message string) {
 	w.events = append(w.events, message)
 }
@@ -298,7 +357,8 @@ func (w *World) EmitEvent(message string) {
 func (w *World) disconnectPlayer(e *entity) {
 	w.Lock()
 	defer w.Unlock()
-	i := w.index(e.player.loc.X, e.player.loc.Y)
+	x, y := e.player.GetLocation()
+	i := w.index(x, y)
 	w.wMap[i] = removeEntity(w.wMap[i], e)
 }
 

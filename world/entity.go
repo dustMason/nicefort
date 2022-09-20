@@ -1,5 +1,9 @@
 package world
 
+import (
+	"github.com/lucasb-eyer/go-colorful"
+)
+
 type entity struct {
 	class    Class
 	subclass Subclass
@@ -7,40 +11,40 @@ type entity struct {
 	npc      *NPC
 	item     *Item
 	quantity int
+	variant  int // 0 < n < 10, random value decided at worldgen time to use for visual texture
 	// todo move the loc field here
+	// todo add baseColor field and make a constructor for `entity`. baseColor should be cached
 }
+
+var black, _ = colorful.Hex("#000000")
 
 func (e entity) String() string {
 	if e.player != nil {
 		return " " + string(e.player.name[0])
 	}
+	if e.npc != nil {
+		return e.npc.icon
+	}
 	if e.item != nil {
 		return e.item.String()
 	}
-	return tile(e.class, e.subclass)
+	return tile(e.class, e.subclass, e.variant)
 }
 
-func (e entity) Color() string {
-	if e.player != nil {
-		return "#FDC300"
-	}
-	switch e.subclass {
-	case Floor:
-		return "#444444"
-	case Water:
-		return "#315F8C"
-	case Grass:
-		return "#2B8C28"
-	case Rock:
-		return "#616267"
-	default:
-		return "#fdffcc"
-	}
+func (e entity) ForegroundColor() string {
+	return e.baseColor().Hex()
+}
+
+func (e entity) BackgroundColor() string {
+	return e.baseColor().BlendLab(black, 0.6).Hex()
 }
 
 func (e entity) SeeThrough() bool {
 	if e.class != Environment {
 		return true
+	}
+	if e.subclass == Tree {
+		return false
 	}
 	return e.subclass != WallBlock
 }
@@ -50,11 +54,8 @@ func (e entity) Memorable() bool {
 }
 
 func (e entity) Walkable() bool {
-	if e.class != Environment {
-		return false
-	}
 	switch e.subclass {
-	case WallBlock, Water:
+	case WallBlock, Water, Tree:
 		return false
 	default:
 		return true
@@ -63,6 +64,35 @@ func (e entity) Walkable() bool {
 
 func (e entity) Pickupable() bool {
 	return e.item != nil
+}
+
+func (e entity) baseColor() colorful.Color {
+	var hex string
+	if e.player != nil {
+		hex = "#FDC300"
+	}
+	switch e.subclass {
+	case Floor:
+		hex = "#444444"
+	case Water:
+		h1 := "#46468C"
+		h2 := "#504EA6"
+		c, _ := colorful.Hex(h1)
+		c2, _ := colorful.Hex(h2)
+		return c.BlendLab(c2, float64(e.variant)/10.)
+	case Grass, Tree:
+		hex = "#2B8C28"
+	case Rock, Pebbles:
+		hex = "#9DAAB0"
+	default:
+		hex = "#fdffcc"
+	}
+	c, _ := colorful.Hex(hex)
+	return c
+}
+
+func (e entity) Attackable() bool {
+	return e.npc != nil
 }
 
 type Class int
@@ -88,35 +118,40 @@ const (
 	Water
 	Grass
 	Rock
+	Pebbles
+	Tree
 )
 
-var tileMap = map[Class]map[Subclass]string{
+var tileMap = map[Class]map[Subclass][]string{
 	Environment: {
-		WallCornerNE: "◣ ",
-		WallCornerSE: "◤ ",
-		WallCornerSW: "◥ ",
-		WallCornerNW: "◢ ",
-		Floor:        "..",
-		Space:        "  ",
-		Water:        "≈≈",
-		Grass:        "''",
-		Rock:         "XX",
-		Default:      "猫",
+		WallCornerNE: {"◣ "},
+		WallCornerSE: {"◤ "},
+		WallCornerSW: {"◥ "},
+		WallCornerNW: {"◢ "},
+		Floor:        {".."},
+		Space:        {"  "},
+		Water:        {"≈≈"},
+		Grass:        {"''", "\"'"},
+		Rock:         {"姅", "艫", "蠨"},
+		Pebbles:      {"፨፨"},
+		Tree:         {"个", "丫"},
+		Default:      {"猫"},
 	},
 	Thing: {
-		Default: "i ",
+		Default: {"i "},
 	},
 	Being: {
-		Default: "& ",
+		Default: {"& "},
 	},
 }
 
-func tile(class Class, subclass Subclass) string {
+func tile(class Class, subclass Subclass, variant int) string {
 	if submap, ok := tileMap[class]; ok {
+		v := submap[Default]
 		if m, ok := submap[subclass]; ok {
-			return m
+			v = m
 		}
-		return submap[Default]
+		return v[variant%len(v)]
 	}
 	return Unknown
 }

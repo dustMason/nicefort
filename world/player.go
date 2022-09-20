@@ -4,6 +4,7 @@ import (
 	"github.com/dustmason/nicefort/fov"
 	"math"
 	"sync"
+	"time"
 )
 
 type player struct {
@@ -15,6 +16,7 @@ type player struct {
 	view         *fov.View
 	inventoryMap map[int]*InventoryItem // map of item id => inventoryItem
 	inventory    []*InventoryItem
+	moveSpeed    float64 // 0 < n < 1.0
 
 	// counters
 	maxCarry  float64
@@ -22,6 +24,7 @@ type player struct {
 	maxHealth int
 	health    int
 	money     int
+	lastMoved time.Time // for applying moveSpeed
 
 	// todo
 	// - stats?
@@ -39,6 +42,7 @@ func NewPlayer(id string, c Coord) *entity {
 		maxHealth:    20,
 		health:       20,
 		money:        0,
+		moveSpeed:    0.2,
 	}
 	return &entity{class: Being, player: p}
 }
@@ -105,4 +109,17 @@ func (p *player) ReplaceInventory(inv map[int]*InventoryItem) {
 		ni = append(ni, ii)
 	}
 	p.inventory = ni
+}
+
+func (p *player) SetLocation(nx, ny int, now time.Time) {
+	p.lastMoved = now
+	p.loc = Coord{nx, ny}
+}
+
+func (p *player) GetLocation() (int, int) {
+	return p.loc.X, p.loc.Y
+}
+
+func (p *player) CanMove(now time.Time) bool {
+	return now.Sub(p.lastMoved) > time.Duration(int(500.*p.moveSpeed))*time.Millisecond
 }

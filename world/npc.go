@@ -1,6 +1,7 @@
 package world
 
 import (
+	"github.com/japanoise/dmap"
 	"math/rand"
 	"sync"
 	"time"
@@ -17,7 +18,7 @@ type NPC struct {
 	health    int
 	maxHealth int
 	mood      mood
-	target    *entity // the player to run from/to
+	targets   map[*entity]struct{} // the player(s) to run from/to
 	drop      []*InventoryItem
 	behavior  behavior
 	loc       Coord
@@ -46,36 +47,66 @@ func (n *NPC) Tick(now time.Time, w *World, e *entity) {
 
 func (n *NPC) Attacked(e *entity, damage int) []*InventoryItem {
 	n.health -= damage
-	n.target = e
+	n.targets[e] = struct{}{}
 	if n.health <= 0 {
 		return n.drop
 	}
 	return nil
 }
 
-// used by animals who normally don't care about players. they move aimlessly until attacked, and
-// then try to run away.
+func newNPC(name, icon string, speed float64, health int, b behavior, x, y int) *NPC {
+	return &NPC{
+		Name:      name,
+		icon:      icon,
+		baseSpeed: speed,
+		health:    health,
+		behavior:  b,
+		loc:       Coord{x, y},
+		targets:   make(map[*entity]struct{}),
+	}
+}
+
+// normally doesn't care about players. runs away when attacked
 func defenselessCreature(w *World, me *entity) {
 	if me.npc.health < me.npc.maxHealth {
 		me.npc.mood = terrorized
 		me.npc.speed = me.npc.baseSpeed * 2
-		// todo run away
+		// todo run away (implement a HighestNeighbor func for dmap?)
 	} else {
 		me.npc.mood = calm
 		me.npc.speed = me.npc.baseSpeed
-		dx := rand.Intn(3) - 1
-		dy := rand.Intn(3) - 1
-		w.MoveNPC(dx, dy, me)
+		x := rand.Intn(3) - 1 + me.npc.loc.X
+		y := rand.Intn(3) - 1 + me.npc.loc.Y
+		w.MoveNPC(x, y, me)
+	}
+}
+
+// normally doesn't care about players. fights back when attacked
+func annoyingCreature(w *World, me *entity) {
+	if len(me.npc.targets) > 0 {
+		me.npc.mood = enraged
+		me.npc.speed = me.npc.baseSpeed * 3
+		// todo this map should be small - only a 20x20 square around the NPC. this is slow!
+		dMap := dmap.BlankDMap(w, dmap.ManhattanNeighbours)
+		pt := make([]dmap.Point, 0, len(me.npc.targets))
+		for t, _ := range me.npc.targets {
+			pt = append(pt, t.player.loc)
+		}
+		dMap.Calc(pt...)
+		nextMove := dMap.LowestNeighbour(me.npc.loc.X, me.npc.loc.Y)
+		w.MoveNPC(nextMove.X, nextMove.Y, me)
+		// todo attack the target
+	} else {
+		x := rand.Intn(3) - 1 + me.npc.loc.X
+		y := rand.Intn(3) - 1 + me.npc.loc.Y
+		w.MoveNPC(x, y, me)
 	}
 }
 
 func NewRabbit(x, y int) *NPC {
-	return &NPC{
-		Name:      "rabbit",
-		icon:      "of",
-		baseSpeed: 0.2,
-		health:    3,
-		behavior:  defenselessCreature,
-		loc:       Coord{x, y},
-	}
+	return newNPC("rabbit", "of", 0.2, 3, defenselessCreature, x, y)
+}
+
+func NewElephant(x, y int) *NPC {
+	return newNPC("elephant", "OR", 0.1, 400, annoyingCreature, x, y)
 }
