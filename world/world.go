@@ -14,6 +14,10 @@ import (
 )
 
 const NPCActivationRadius = 10 // approx. distance from any player where NPCs take turns
+const secondsPerDay = 6.66     // seconds of real-world clock time per in-game day
+var blackSpace = tileMap[Environment][Space][0]
+var memColor = "#444444"
+var memStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(memColor))
 
 type Coord struct {
 	X, Y int
@@ -31,6 +35,8 @@ type World struct {
 	activeNPCs []*entity
 	events     *events.EventList
 	onEvent    map[string]func(string) // map of player id => chat callback
+	days       float64                 // age of the world
+	lastTick   time.Time
 }
 
 // SizeX SizeY IsPassable and OOB to satisfy the dmap interface
@@ -64,18 +70,21 @@ func removeEntity(l location, e *entity) location {
 
 func NewWorld(size int) *World {
 	w := &World{
-		W:       size,
-		H:       size,
-		players: make(map[string]*entity),
-		wMap:    GenerateOverworld(size),
-		events:  events.NewEventList(100),
-		onEvent: make(map[string]func(string)),
+		W:        size,
+		H:        size,
+		players:  make(map[string]*entity),
+		wMap:     GenerateOverworld(size),
+		events:   events.NewEventList(100),
+		onEvent:  make(map[string]func(string)),
+		lastTick: time.Now(),
 	}
 	go w.runTicker()
 	return w
 }
 
 func (w *World) tick(t time.Time) {
+	w.days += t.Sub(w.lastTick).Seconds() / secondsPerDay
+	w.lastTick = t
 	for _, e := range w.activeNPCs {
 		e.npc.Tick(t, w, e)
 	}
@@ -106,6 +115,153 @@ func (w *World) MoveNPC(x, y int, e *entity) {
 		w.wMap[oldIndex] = removeEntity(w.wMap[oldIndex], e)
 		e.npc.loc = Coord{x, y}
 	}
+}
+
+func (w *World) ActivateItem(playerID string, inventoryIndex int) {
+	// todo get the item from the player's inventory and activate it!
+	// call a method on the player to consumer the item if the activate function returns true
+}
+
+func (w *World) PlayerInventory(playerID string) []*InventoryItem {
+	e := w.getPlayer(playerID)
+	return e.player.Inventory()
+}
+
+func (w *World) AvailableRecipes(playerID string) []Recipe {
+	e := w.getPlayer(playerID)
+	return AvailableRecipes(e.player.inventoryMap, e, w)
+}
+
+func (w *World) DoRecipe(playerID string, r Recipe) bool {
+	e := w.getPlayer(playerID)
+	ok, newInv := r.Do(e.player.inventoryMap, e, w)
+	if ok {
+		e.player.ReplaceInventory(newInv)
+		return true
+	}
+	return false
+}
+
+func (w *World) DisconnectPlayer(playerID string) {
+	e := w.getPlayer(playerID)
+	w.disconnectPlayer(e)
+	w.Event(events.Warning, fmt.Sprintf("%s left.", e.player.name))
+	w.Lock()
+	defer w.Unlock()
+	delete(w.onEvent, playerID)
+	w.refreshActiveNPCs()
+}
+
+func (w *World) RenderPlayerEvents(playerID string) string {
+	e := w.getPlayer(playerID)
+	return e.player.Events()
+}
+
+func (w *World) RenderMap(playerID, playerName string, vw, vh int) string {
+	vw = vw / 2 // each tile is 2 chars wide
+	ply := w.getOrCreatePlayer(playerID, playerName).player
+	x, y := ply.GetLocation()
+	seen := ply.AllVisited()
+
+	w.RLock()
+	defer w.RUnlock()
+	var b strings.Builder
+	b.Grow(vw*vh*2 + vh) // *2 because double-width chars and +vh because line-breaks
+	left := x - vw/2
+	right := x + vw/2
+	top := y - vh/2
+	bottom := y + vh/2
+	ix := left
+	iy := top
+	for iy < bottom {
+		for ix < right {
+			var ent *entity
+			if !w.InBounds(ix, iy) {
+				b.WriteString(blackSpace)
+			} else {
+				ic := Coord{ix, iy}
+				inView, dist := ply.CanSee(ix, iy)
+				memString, inPastView := seen[ic]
+				if inPastView && !inView {
+					b.WriteString(memString)
+				} else if inView {
+					loc := w.location(ix, iy)
+					ent = loc[len(loc)-1]
+					bg := loc[0]
+					b.WriteString(
+						lipgloss.NewStyle().
+							Foreground(lipgloss.Color(ent.ForegroundColor(dist))).
+							Background(lipgloss.Color(bg.BackgroundColor(dist))).
+							Render(ent.String()),
+					)
+				} else { // not in past or current view
+					b.WriteString(blackSpace)
+				}
+			}
+			ix++
+		}
+		ix = left
+		b.WriteString("\n")
+		iy++
+	}
+	return b.String()
+}
+
+func (w *World) RenderForMemory(x, y int) string {
+	loc := w.location(x, y)
+	// iterate backwards to get topmost memorable entity first
+	for i := len(loc) - 1; i >= 0; i-- {
+		if loc[i].Memorable() {
+			return memStyle.Render(loc[i].String())
+		}
+	}
+	return blackSpace
+}
+
+// todo refactor this to return some value type (map of string[string]?) or a struct
+func (w *World) RenderPlayerSidebar(id string, name string) string {
+	var b strings.Builder
+	e := w.getOrCreatePlayer(id, name)
+	myLoc := e.player.loc
+	b.WriteString(name + "\n")
+	b.WriteString(fmt.Sprintf("Pack: %.1f / %d\n", e.player.carrying, int(e.player.maxCarry)))
+	b.WriteString(fmt.Sprintf("Health: %d / %d\n", e.player.health, e.player.maxHealth))
+	b.WriteString(fmt.Sprintf("Cash: $%d\n", e.player.money))
+	b.WriteString(fmt.Sprintf("Hunger: %.3f\n", e.player.hunger))
+	b.WriteString("\n")
+
+	for _, ee := range w.players {
+		if ee == e {
+			continue
+		}
+		pLoc := ee.player.loc
+		b.WriteString(
+			compassIndicator(myLoc.X, myLoc.Y, pLoc.X, pLoc.Y) + " " + ee.player.name + "\n",
+		)
+	}
+
+	b.WriteString("\n")
+	for _, ee := range w.activeNPCs {
+		nLoc := ee.npc.loc
+		b.WriteString(
+			compassIndicator(myLoc.X, myLoc.Y, nLoc.X, nLoc.Y) + " " + ee.npc.Name + "\n",
+		)
+	}
+
+	// todo also get a list of the items the player can see and render compass items for those
+
+	return b.String()
+}
+
+var seasons = []string{"spring", "summer", "fall", "winter"}
+
+func (w *World) RenderWorldStatus() string {
+	// world starts on first day of spring?
+	day := int(w.days) % 365
+	year := int(w.days / 365)
+	i := int(float64(day) / 91.25)
+	season := seasons[i]
+	return fmt.Sprintf("%s : Year %d, Day %d", season, year, day)
 }
 
 func (w *World) getOrCreatePlayer(playerID, playerName string) *entity {
@@ -222,71 +378,6 @@ func (w *World) movePlayer(e *entity, dx, dy int) {
 	}
 }
 
-var blackSpace = tileMap[Environment][Space][0]
-var memColor = "#444444"
-var memStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(memColor))
-
-func (w *World) RenderMap(playerID, playerName string, vw, vh int) string {
-	vw = vw / 2 // each tile is 2 chars wide
-	ply := w.getOrCreatePlayer(playerID, playerName).player
-	x, y := ply.GetLocation()
-	seen := ply.AllVisited()
-
-	w.RLock()
-	defer w.RUnlock()
-	var b strings.Builder
-	b.Grow(vw*vh*2 + vh) // *2 because double-width chars and +vh because line-breaks
-	left := x - vw/2
-	right := x + vw/2
-	top := y - vh/2
-	bottom := y + vh/2
-	ix := left
-	iy := top
-	for iy < bottom {
-		for ix < right {
-			var ent *entity
-			if !w.InBounds(ix, iy) {
-				b.WriteString(blackSpace)
-			} else {
-				ic := Coord{ix, iy}
-				inView, dist := ply.CanSee(ix, iy)
-				memString, inPastView := seen[ic]
-				if inPastView && !inView {
-					b.WriteString(memString)
-				} else if inView {
-					loc := w.location(ix, iy)
-					ent = loc[len(loc)-1]
-					bg := loc[0]
-					b.WriteString(
-						lipgloss.NewStyle().
-							Foreground(lipgloss.Color(ent.ForegroundColor(dist))).
-							Background(lipgloss.Color(bg.BackgroundColor(dist))).
-							Render(ent.String()),
-					)
-				} else { // not in past or current view
-					b.WriteString(blackSpace)
-				}
-			}
-			ix++
-		}
-		ix = left
-		b.WriteString("\n")
-		iy++
-	}
-	return b.String()
-}
-
-func (w *World) RenderForMemory(x, y int) string {
-	loc := w.location(x, y)
-	// iterate backwards to get topmost memorable entity first
-	for i := len(loc) - 1; i >= 0; i-- {
-		if loc[i].Memorable() {
-			return memStyle.Render(loc[i].String())
-		}
-	}
-	return blackSpace
-}
-
 func (w *World) randomAvailableCoord() (int, int, error) {
 	tries := 1000
 	for tries > 0 {
@@ -391,100 +482,16 @@ func (w *World) disconnectPlayer(e *entity) {
 	w.wMap[i] = removeEntity(w.wMap[i], e)
 }
 
-// todo refactor this to return some value type (map of string[string]?) or a struct
-func (w *World) RenderPlayerSidebar(id string, name string) string {
-	var b strings.Builder
-	e := w.getOrCreatePlayer(id, name)
-	b.WriteString(name + "\n")
-	b.WriteString(fmt.Sprintf("Pack: %.1f / %d\n", e.player.carrying, int(e.player.maxCarry)))
-	b.WriteString(fmt.Sprintf("Health: %d / %d\n", e.player.health, e.player.maxHealth))
-	b.WriteString(fmt.Sprintf("Cash: $%d\n", e.player.money))
-	b.WriteString(fmt.Sprintf("Hunger: %.3f\n", e.player.hunger))
-	b.WriteString("\n")
-
-	for _, ee := range w.players {
-		if ee == e {
-			continue
-		}
-		b.WriteString(
-			compassIndicator(e.player.loc.X, e.player.loc.Y, ee.player.loc.X, ee.player.loc.Y) + " " + ee.player.name + "\n",
-		)
-	}
-
-	b.WriteString("\n")
-	for _, ee := range w.activeNPCs {
-		b.WriteString(
-			compassIndicator(e.player.loc.X, e.player.loc.Y, ee.npc.loc.X, ee.npc.loc.Y) + " " + ee.npc.Name + "\n",
-		)
-	}
-
-	// todo also get a list of the items the player can see and render compass items for those
-
-	return b.String()
-}
-
-var arrows = map[[2]int]string{
-	[2]int{0, 0}:   "•",
-	[2]int{1, 1}:   "↘",
-	[2]int{1, -1}:  "↗",
-	[2]int{-1, 1}:  "↙",
-	[2]int{-1, -1}: "↖",
-	[2]int{0, -1}:  "↑",
-	[2]int{0, 1}:   "↓",
-	[2]int{-1, 0}:  "←",
-	[2]int{1, 0}:   "→",
-}
-
 // compassIndicator returns a string like "↖ 30"
 func compassIndicator(fromX, fromY, toX, toY int) string {
 	dx := toX - fromX
 	dy := toY - fromY
 	deltaX := util.ClampedInt(dx, -1, 1)
 	deltaY := util.ClampedInt(dy, -1, 1)
-	arrow, ok := arrows[[2]int{deltaX, deltaY}]
+	arrow, ok := util.Arrows[[2]int{deltaX, deltaY}]
 	out := ""
 	if ok {
 		out = arrow + " "
 	}
 	return out + strconv.Itoa(util.AbsInt(dx)+util.AbsInt(dy))
-}
-
-func (w *World) ActivateItem(playerID string, inventoryIndex int) {
-	// todo get the item from the player's inventory and activate it!
-	// call a method on the player to consumer the item if the activate function returns true
-}
-
-func (w *World) PlayerInventory(playerID string) []*InventoryItem {
-	e := w.getPlayer(playerID)
-	return e.player.Inventory()
-}
-
-func (w *World) AvailableRecipes(playerID string) []Recipe {
-	e := w.getPlayer(playerID)
-	return AvailableRecipes(e.player.inventoryMap, e, w)
-}
-
-func (w *World) DoRecipe(playerID string, r Recipe) bool {
-	e := w.getPlayer(playerID)
-	ok, newInv := r.Do(e.player.inventoryMap, e, w)
-	if ok {
-		e.player.ReplaceInventory(newInv)
-		return true
-	}
-	return false
-}
-
-func (w *World) DisconnectPlayer(playerID string) {
-	e := w.getPlayer(playerID)
-	w.disconnectPlayer(e)
-	w.Event(events.Warning, fmt.Sprintf("%s left.", e.player.name))
-	w.Lock()
-	defer w.Unlock()
-	delete(w.onEvent, playerID)
-	w.refreshActiveNPCs()
-}
-
-func (w *World) RenderPlayerEvents(playerID string) string {
-	e := w.getPlayer(playerID)
-	return e.player.Events()
 }

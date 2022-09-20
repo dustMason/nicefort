@@ -34,6 +34,22 @@ type player struct {
 	lastTick  time.Time
 }
 
+func (p *player) String() string {
+	return string(p.name[0]) + " "
+}
+
+func (p *player) Color() string {
+	return "#FDC300"
+}
+
+func (p *player) UpdateLastMoved(t time.Time) {
+	p.lastMoved = t
+}
+
+func (p *player) Attackable() bool {
+	return false
+}
+
 func NewPlayer(id string, c Coord) *entity {
 	p := &player{
 		id:           id,
@@ -74,6 +90,10 @@ func (p *player) CanSee(x, y int) (bool, float64) {
 	p.RLock()
 	defer p.RUnlock()
 	return p.view.IsVisible(x, y)
+}
+
+func (p *player) CanMove(now time.Time) bool {
+	return now.Sub(p.lastMoved) > time.Duration(int(500.*p.moveSpeed))*time.Millisecond
 }
 
 func (p *player) AllVisited() map[Coord]string {
@@ -125,23 +145,19 @@ func (p *player) ReplaceInventory(inv map[int]*InventoryItem) {
 	p.inventory = ni
 }
 
-func (p *player) SetLocation(nx, ny int, now time.Time) {
-	p.lastMoved = now
-	p.loc = Coord{nx, ny}
-}
-
-func (p *player) GetLocation() (int, int) {
-	return p.loc.X, p.loc.Y
-}
-
-func (p *player) CanMove(now time.Time) bool {
-	return now.Sub(p.lastMoved) > time.Duration(int(500.*p.moveSpeed))*time.Millisecond
-}
-
 func (p *player) Event(kind events.Class, message string) {
 	p.events.Add(kind, message)
 }
 
 func (p *player) Events() string {
 	return p.events.Render()
+}
+
+func (p *player) GetLocation() (int, int) {
+	return p.loc.X, p.loc.Y
+}
+
+func (p *player) SetLocation(x, y int, t time.Time) {
+	p.lastMoved = t
+	p.loc = Coord{x, y}
 }

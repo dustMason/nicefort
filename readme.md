@@ -5,7 +5,9 @@ A multiplayer realtime roguelike that's played over `ssh`.
 
 ## Concept
 
-You find yourself on a remote island with nothing. Together with your friends, you must survive as long as possible in an ever more hostile environment. Grow and harvest food; craft tools, weapons and materials; fight wild beasts. Make permanent changes to the world around you.
+You find yourself on a remote island with only a backpack. Together with your friends, you must survive as long as possible in an ever more hostile environment. Grow and harvest food; craft tools, weapons and materials; fight wild beasts. Make permanent changes to the world around you.
+
+Each season lasts about 10 minutes. You must create a NICE FORT capable of withstanding the harsh winter.
 
 ## Play
 
@@ -23,18 +25,41 @@ ssh -p 23234 jordan@127.0.0.1
 ```
 
 ### TODO
+- worldgen
+  - seasonal spawning of NPCs
+    - always off-screen (not near player)
+    - progressively harder with each year
 - survival gameplay
+  - think of years as levels
   - tools (axe, shovel, etc)
   - eating / hunger
+  - carrying water
+    - tight basket
+    - clay pot
+    - animal skin
   - farming
     - collect seeds
     - library of plant entities
+      - research medicinal plants
     - growth loop
     - harvesting
     - NPCs that eat/trample crops
-  - placing crafted items
+  - crafting
+    - stone tools
+    - clay
+      - bricks
+      - kiln to make charcoal
+    - fire 
+      1. friction fire starter (stick, twine, kindling)
+      2. charcoal oven (make with clay, feed with wood, produce charcoal)
+    - plant items
+      - roofing
   - diagonal movement instead of only manhattan?
-- monsters
+- animals
+  - killing the first animal should be really hard. a big milestone that unlocks a lot of crafting
+    - needle (bone) and thread (sinew)
+    - skins
+    - bone fishing hook
   - debouncing system for fighting
 - ui
   - fix layout bug with inventory table and make it look consistent

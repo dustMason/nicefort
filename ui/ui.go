@@ -40,7 +40,6 @@ type UIModel struct {
 	height        int
 	quitting      bool
 	keys          keyMap
-	lastKey       string
 	help          help.Model
 	chat          *viewport.Model
 	chatInput     textinput.Model
@@ -201,16 +200,12 @@ func (m UIModel) handleMapModeMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, m.keys.Up):
-			m.lastKey = "↑"
 			m.world.MovePlayer(0, -1, m.playerID)
 		case key.Matches(msg, m.keys.Down):
-			m.lastKey = "↓"
 			m.world.MovePlayer(0, 1, m.playerID)
 		case key.Matches(msg, m.keys.Left):
-			m.lastKey = "←"
 			m.world.MovePlayer(-1, 0, m.playerID)
 		case key.Matches(msg, m.keys.Right):
-			m.lastKey = "→"
 			m.world.MovePlayer(1, 0, m.playerID)
 		case key.Matches(msg, m.keys.Help):
 			m.help.ShowAll = !m.help.ShowAll
@@ -412,7 +407,7 @@ func (m UIModel) View() string {
 				chatInputStyle.Render(m.chatInput.View()),
 			),
 		),
-		sbStyle.Render(m.lastKey), // todo use status bar for short help text
+		sbStyle.Render(m.world.RenderWorldStatus()), // todo use status bar for short help text
 	)
 	doc.WriteString(ui)
 	return docStyle.Render(doc.String())

@@ -48,6 +48,22 @@ func (n *NPC) Tick(now time.Time, w *World, e *entity) {
 	}
 }
 
+func (n *NPC) String() string {
+	return n.icon
+}
+
+func (n *NPC) Color() string {
+	return "#FDC300"
+}
+
+func (n *NPC) UpdateLastMoved(t time.Time) {
+	n.lastMoved = t
+}
+
+func (n *NPC) Attackable() bool {
+	return true
+}
+
 // Attacked returns the amount of damage done, whether the npc is alive, and any items dropped
 func (n *NPC) Attacked(e *entity, damage int) (int, bool, []*InventoryItem) {
 	n.health -= damage

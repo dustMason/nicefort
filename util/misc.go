@@ -16,3 +16,15 @@ func AbsInt(i int) int {
 	}
 	return i
 }
+
+var Arrows = map[[2]int]string{
+	[2]int{0, 0}:   "•",
+	[2]int{1, 1}:   "↘",
+	[2]int{1, -1}:  "↗",
+	[2]int{-1, 1}:  "↙",
+	[2]int{-1, -1}: "↖",
+	[2]int{0, -1}:  "↑",
+	[2]int{0, 1}:   "↓",
+	[2]int{-1, 0}:  "←",
+	[2]int{1, 0}:   "→",
+}
