@@ -1,12 +1,15 @@
 package world
 
 import (
+	"fmt"
 	"github.com/dustmason/nicefort/events"
 	"github.com/dustmason/nicefort/fov"
 	"math"
 	"sync"
 	"time"
 )
+
+const hungerRate = 1.0 / 60 / 60 // how much of total hunger to experience per second. 1/60/60 == must eat once per hour
 
 type player struct {
 	sync.RWMutex
@@ -21,15 +24,14 @@ type player struct {
 	events       *events.EventList
 
 	// counters
-	maxCarry  float64
 	carrying  float64
-	maxHealth int
+	maxCarry  float64
 	health    int
+	maxHealth int
+	hunger    float64 // 0 < n < 1
 	money     int
 	lastMoved time.Time // for applying moveSpeed
-
-	// todo
-	// - stats?
+	lastTick  time.Time
 }
 
 func NewPlayer(id string, c Coord) *entity {
@@ -45,9 +47,18 @@ func NewPlayer(id string, c Coord) *entity {
 		health:       20,
 		money:        0,
 		moveSpeed:    0.2,
+		hunger:       0.,
 		events:       events.NewEventList(4),
+		lastTick:     time.Now(),
 	}
 	return &entity{class: Being, player: p}
+}
+
+func (p *player) Tick(t time.Time) {
+	elapsed := t.Sub(p.lastTick).Seconds()
+	p.hunger += elapsed * hungerRate
+	// todo starve if too hungry
+	p.lastTick = t
 }
 
 func (p *player) See(w *World) {
@@ -88,7 +99,7 @@ func (p *player) PickUp(i *Item, quantity int) int {
 		}
 		p.carrying += float64(pickedUp) * i.Weight
 	}
-	// todo emit message to tell player they got a thing
+	p.Event(events.Success, fmt.Sprintf("You picked up %d x %s", pickedUp, i.Name))
 	return pickedUp
 }
 

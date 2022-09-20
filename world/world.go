@@ -7,6 +7,7 @@ import (
 	"github.com/dustmason/nicefort/events"
 	"github.com/dustmason/nicefort/util"
 	"math/rand"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -76,6 +77,9 @@ func NewWorld(size int) *World {
 func (w *World) tick(t time.Time) {
 	for _, e := range w.activeNPCs {
 		e.npc.Tick(t, w, e)
+	}
+	for _, e := range w.players {
+		e.player.Tick(t)
 	}
 }
 
@@ -388,7 +392,54 @@ func (w *World) RenderPlayerSidebar(id string, name string) string {
 	b.WriteString(fmt.Sprintf("Pack: %.1f / %d\n", e.player.carrying, int(e.player.maxCarry)))
 	b.WriteString(fmt.Sprintf("Health: %d / %d\n", e.player.health, e.player.maxHealth))
 	b.WriteString(fmt.Sprintf("Cash: $%d\n", e.player.money))
+	b.WriteString(fmt.Sprintf("Hunger: %.3f\n", e.player.hunger))
+	b.WriteString("\n")
+
+	for _, ee := range w.players {
+		if ee == e {
+			continue
+		}
+		b.WriteString(
+			compassIndicator(e.player.loc.X, e.player.loc.Y, ee.player.loc.X, ee.player.loc.Y) + " " + e.player.name + "\n",
+		)
+	}
+
+	b.WriteString("\n")
+	for _, ee := range w.activeNPCs {
+		b.WriteString(
+			compassIndicator(e.player.loc.X, e.player.loc.Y, ee.npc.loc.X, ee.npc.loc.Y) + " " + ee.npc.Name + "\n",
+		)
+	}
+
+	// todo also get a list of the items the player can see and render compass items for those
+
 	return b.String()
+}
+
+var arrows = map[[2]int]string{
+	[2]int{0, 0}:   "•",
+	[2]int{1, 1}:   "↘",
+	[2]int{1, -1}:  "↗",
+	[2]int{-1, 1}:  "↙",
+	[2]int{-1, -1}: "↖",
+	[2]int{0, -1}:  "↑",
+	[2]int{0, 1}:   "↓",
+	[2]int{-1, 0}:  "←",
+	[2]int{1, 0}:   "→",
+}
+
+// compassIndicator returns a string like "↖ 30"
+func compassIndicator(fromX, fromY, toX, toY int) string {
+	dx := toX - fromX
+	dy := toY - fromY
+	deltaX := util.ClampedInt(dx, -1, 1)
+	deltaY := util.ClampedInt(dy, -1, 1)
+	arrow, ok := arrows[[2]int{deltaX, deltaY}]
+	out := ""
+	if ok {
+		out = arrow + " "
+	}
+	return out + strconv.Itoa(util.AbsInt(dx)+util.AbsInt(dy))
 }
 
 func (w *World) ActivateItem(playerID string, inventoryIndex int) {

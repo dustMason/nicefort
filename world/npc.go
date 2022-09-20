@@ -109,9 +109,9 @@ func annoyingCreature(w *World, me *entity) {
 }
 
 func NewRabbit(x, y int) *NPC {
-	return newNPC("rabbit", "of", 0.2, 3, defenselessCreature, x, y)
+	return newNPC("rabbit", "r ", 0.2, 3, defenselessCreature, x, y)
 }
 
 func NewElephant(x, y int) *NPC {
-	return newNPC("elephant", "OR", 0.1, 400, annoyingCreature, x, y)
+	return newNPC("elephant", "E ", 0.1, 400, annoyingCreature, x, y)
 }

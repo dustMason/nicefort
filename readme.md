@@ -1,7 +1,13 @@
 Nice Fort
 ---
 
-A multiplayer dungeon crawler that's played over `ssh`.
+A multiplayer realtime roguelike that's played over `ssh`.
+
+## Concept
+
+You find yourself on a remote island with nothing. Together with your friends, you must survive as long as possible in an ever more hostile environment. Grow and harvest food; craft tools, weapons and materials; fight wild beasts. Make permanent changes to the world around you.
+
+## Play
 
 Try the live dev server (pubkey auth required). Note that you will need a terminal that supports "truecolor" such as iTerm2.
 
@@ -17,19 +23,24 @@ ssh -p 23234 jordan@127.0.0.1
 ```
 
 ### TODO
-- ui
-  - fix layout bug with inventory table
-  - show location of other players in sidebar (arrow and distance)
-  - `g` to pick up entity player is standing on instead of moving towards
-  - can i do mouse support?
-  - render event types with color/style
 - survival gameplay
   - tools (axe, shovel, etc)
+  - eating / hunger
+  - farming
+    - collect seeds
+    - library of plant entities
+    - growth loop
+    - harvesting
+    - NPCs that eat/trample crops
   - placing crafted items
-  - diagonal movement instead of only manhattan
+  - diagonal movement instead of only manhattan?
 - monsters
   - debouncing system for fighting
-  - all visible NPCs show in sidebar (name, health)
+- ui
+  - fix layout bug with inventory table and make it look consistent
+  - `g` to pick up entity player is standing on instead of moving towards
+  - mouse support
+  - render event types with color/style
 - better map view
   - don't scroll with each move. fit the level on the screen
   - current player renders as `@`, other players use first initial
