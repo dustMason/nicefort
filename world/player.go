@@ -2,6 +2,7 @@ package world
 
 import (
 	"fmt"
+	"github.com/charmbracelet/bubbles/progress"
 	"github.com/dustmason/nicefort/events"
 	"github.com/dustmason/nicefort/fov"
 	"math"
@@ -14,6 +15,7 @@ const hungerRate = 1.0 / 60 / 60 // how much of total hunger to experience per s
 type Activity struct {
 	description string
 	progress    float64 // percentage progress (0 < n < 1.0)
+	pBar        progress.Model
 }
 
 type player struct {
@@ -154,6 +156,8 @@ func (p *player) GetActivity() Activity {
 }
 
 func (p *player) SetActivity(a Activity) {
+	a.pBar = progress.New(progress.WithScaledGradient("#FF7CCB", "#FDFF8C"), progress.WithoutPercentage())
+	a.pBar.Width = 19
 	p.currentActivity = a
 }
 

@@ -338,8 +338,7 @@ func (w *World) RenderPlayerSidebar(id string, name string) string {
 
 	a := e.player.GetActivity()
 	if a.description != "" {
-		// todo render a real progress bar with https://github.com/charmbracelet/bubbles/tree/master/progress
-		b.WriteString(fmt.Sprintf("%s\n%.1f\n", a.description, a.progress))
+		b.WriteString(fmt.Sprintf("%s\n%s\n", a.description, a.pBar.ViewAs(a.progress)))
 	}
 
 	for _, ee := range w.players {
