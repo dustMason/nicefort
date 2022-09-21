@@ -32,7 +32,9 @@ ssh -p 23234 jordan@127.0.0.1
 - survival gameplay
   - think of years as levels
   - tools (axe, shovel, etc)
-  - eating / hunger
+    - [x] game support
+    - list of actual items
+  - [x] eating / hunger
   - carrying water
     - tight basket
     - clay pot
@@ -45,7 +47,7 @@ ssh -p 23234 jordan@127.0.0.1
     - [x] harvesting
     - NPCs that eat/trample crops
   - crafting
-    - stone tools
+    - [x] stone tools
     - clay
       - bricks
       - kiln to make charcoal
@@ -63,7 +65,7 @@ ssh -p 23234 jordan@127.0.0.1
   - debouncing system for fighting
 - ui
   - fix layout bug with inventory table and make it look consistent
-  - `g` to pick up entity player is standing on instead of moving towards
+  - [x] `space` to pick up entity player is standing on instead of moving towards
   - mouse support
   - render event types with color/style
 - refactor: instead of entity fields `npc`, `player`, `flora` make `NPC`, `player`, `Flora` each embed `entity`. Then switch statements can handle current `attackable`, `harvestable` scenarios. Make a new type `ItemEntity`.

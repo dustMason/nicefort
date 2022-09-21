@@ -7,70 +7,121 @@ import (
 )
 
 func GenerateOverworld(size int) []location {
-	// thresholds. each value means "up this elevation"
+	// roughly, 1.0 == 1,000m elevation
+	// thresholds below. each value means "up this elevation"
 	water := 0.
-	grassland := 0.2
-	woodland := 0.3
-	scrubland := 0.4
+	bog := 0.05
+	birchForest := 0.2
+	boreal := 0.4
+	rocky := 0.6
+	mountainous := 0.8
+	// glacial := 1.0 // implied
 	stats := make(map[string]int)
-	wg := worldgen2.NewWorld(3, 3)
-	fSize := float64(size)
 	m := make([]location, size*size)
-	x := 0
+
+	heights := getAllHeights(size)
+	for i, z := range heights {
+		r := rand.Intn(1000)
+		v := r / 100
+		var loc location
+		if z < water {
+			loc = location{{environment: Water, variant: v}}
+			stats["water"] += 1
+
+		} else if z < bog {
+			loc = location{{environment: Mud, variant: v}}
+			if r < 50 {
+				loc = append(loc, &entity{flora: BogMyrtle()})
+			}
+			stats["bog"] += 1
+
+		} else if z < birchForest {
+			loc = location{{environment: Grass, variant: v}}
+			if r < 100 {
+				loc = append(loc, &entity{flora: DownyBirch()})
+			} else if r < 120 {
+				loc = append(loc, &entity{flora: Aspen()})
+			} else if r < 140 {
+				loc = append(loc, &entity{flora: ScotsPine()})
+			} else if r < 160 {
+				loc = append(loc, &entity{flora: GreyAdler()})
+			} else if r < 180 {
+				loc = append(loc, &entity{flora: GoatWillow()})
+			} else if r < 200 {
+				loc = append(loc, &entity{flora: BirdCherry()})
+			}
+			// todo rare arctic fox
+			stats["birch forest"] += 1
+
+		} else if z < boreal {
+			loc = location{{environment: Grass, variant: v}}
+			if r < 60 {
+				loc = append(loc, &entity{flora: ScotsPine()})
+			} else if r < 120 {
+				loc = append(loc, &entity{flora: NorwaySpruce()})
+			} else if r < 130 {
+				loc = append(loc, &entity{flora: CloudberryBush()})
+			}
+			stats["boreal"] += 1
+
+		} else if z < rocky {
+			loc = location{{environment: Pebbles, variant: v}}
+			if r < 60 {
+				loc = append(loc, &entity{flora: ScotsPine()})
+			} else if r < 120 {
+				loc = append(loc, &entity{flora: NorwaySpruce()})
+			}
+			stats["rocky"] += 1
+
+		} else if z < mountainous {
+			loc = location{{environment: Rock, variant: v}}
+			if r < 20 {
+				loc = append(loc, &entity{flora: ScotsPine()})
+			}
+			stats["mountainous"] += 1
+
+		} else { // glacial
+			loc = location{{environment: Rock, variant: v}}
+			stats["glacial"] += 1
+		}
+
+		m[i] = loc
+	}
+
+	fmt.Println("Generated world:")
+	fmt.Println("counts:", stats)
+	return m
+}
+
+func getAllHeights(size int) []float64 {
 	y := 0
-	ind := 0
+	x := 0
+	max := 0.
+	w := worldgen2.NewWorld(3, 3)
+	fSize := float64(size)
+	rawHeights := make([]float64, 0)
 	for y < size {
 		for x < size {
-			r := rand.Intn(1000)
-			v := r / 100
-			i := wg.GetHeight_Island(float64(x)/fSize, float64(y)/fSize)
-			var loc location
-			if i < water {
-				loc = location{{class: Environment, subclass: Water, variant: v}}
-				stats["water"] += 1
-
-			} else if i < grassland {
-				loc = location{{class: Environment, subclass: Grass, variant: v}}
-				if r == 1 {
-					loc = append(loc, &entity{class: Being, npc: NewRabbit(x, y)})
-				}
-				stats["grass"] += 1
-
-			} else if i < woodland {
-				loc = location{{class: Environment, subclass: Grass, variant: v}}
-				if r < 100 {
-					loc = append(loc, &entity{class: Environment, subclass: Tree, variant: v})
-				} else if r < 150 {
-					loc = append(loc, &entity{class: Thing, flora: Aspen()})
-				} else if r < 200 {
-					loc = append(loc, &entity{class: Thing, flora: ScotsPine()})
-				}
-				stats["woods"] += 1
-
-			} else if i < scrubland {
-				loc = location{{class: Environment, subclass: Pebbles, variant: v}}
-				if r == 1 {
-					loc = append(loc, &entity{item: &TestItem, quantity: rand.Intn(4) + 1, class: Thing})
-				}
-				stats["scrub"] += 1
-
-			} else {
-				loc = location{{class: Environment, subclass: Rock, variant: v}}
-				stats["mountain"] += 1
+			h := w.GetHeight_Island(float64(x)/fSize, float64(y)/fSize)
+			rawHeights = append(rawHeights, h)
+			if h > max {
+				max = h
 			}
-
-			if r < 10 {
-				// loliphants for testing
-				loc = append(loc, &entity{class: Being, npc: NewElephant(x, y)})
-			}
-
-			m[ind] = loc
 			x++
-			ind++
 		}
 		x = 0
 		y++
 	}
-	fmt.Println("generated world", stats)
-	return m
+	heights := make([]float64, 0, len(rawHeights))
+	ratio := 1 / max
+	for _, h := range rawHeights {
+		var n float64
+		if h > 0 {
+			n = h * ratio
+		} else {
+			n = h
+		}
+		heights = append(heights, n)
+	}
+	return heights
 }

@@ -136,6 +136,11 @@ func annoyingCreature(w *World, me *entity) {
 	}
 }
 
+// todo
+// Elk
+// Deer
+// Bears
+
 func NewRabbit(x, y int) *NPC {
 	return newNPC("rabbit", "r ", 0.2, 3, defenselessCreature, x, y)
 }

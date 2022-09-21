@@ -6,14 +6,13 @@ import (
 )
 
 type entity struct {
-	class    Class
-	subclass Subclass
-	player   *player
-	npc      *NPC
-	item     *Item
-	flora    *Flora
-	quantity int
-	variant  int // 0 < n < 10, random value decided at worldgen time to use for visual texture
+	player      *player
+	npc         *NPC
+	item        *Item
+	flora       *Flora
+	environment Environment
+	quantity    int
+	variant     int // 0 < n < 10, random value decided at worldgen time to use for visual texture
 	// todo move the loc field here
 	// todo add baseColor field and make a constructor for `entity`. baseColor should be cached
 }
@@ -34,7 +33,7 @@ func (e entity) String() string {
 	if e.flora != nil {
 		return e.flora.String()
 	}
-	return tile(e.class, e.subclass, e.variant)
+	return environmentTile(e.environment, e.variant)
 }
 
 func (e entity) ForegroundColor(dist float64) string {
@@ -47,26 +46,28 @@ func (e entity) BackgroundColor(dist float64) string {
 }
 
 func (e entity) SeeThrough() bool {
-	if e.class != Environment {
+	if e.flora != nil {
+		return e.flora.walkable
+	}
+	if e.environment != None {
 		return true
 	}
-	if e.subclass == Tree {
-		return false
-	}
-	return e.subclass != WallBlock
+	return e.environment != WallBlock
 }
 
 func (e entity) Memorable() bool {
-	return e.class != Being
+	return e.npc == nil && e.player == nil
 }
 
 func (e entity) Walkable() bool {
-	switch e.subclass {
-	case WallBlock, Water, Tree:
+	switch e.environment {
+	case WallBlock, Water:
 		return false
-	default:
-		return true
 	}
+	if e.flora != nil {
+		return e.flora.walkable
+	}
+	return true
 }
 
 func (e entity) Pickupable() bool {
@@ -74,26 +75,33 @@ func (e entity) Pickupable() bool {
 }
 
 func (e entity) baseColor() colorful.Color {
-	var hex string
 	if e.player != nil {
-		hex = "#FDC300"
+		return clr("#FDC300")
 	}
-	switch e.subclass {
+	if e.flora != nil {
+		return clr(e.flora.color)
+	}
+	switch e.environment {
 	case Floor:
-		hex = "#444444"
+		return clr("#444444")
 	case Water:
 		h1 := "#46468C"
 		h2 := "#504EA6"
 		c, _ := colorful.Hex(h1)
 		c2, _ := colorful.Hex(h2)
 		return c.BlendLab(c2, float64(e.variant)/10.)
-	case Grass, Tree:
-		hex = "#2B8C28"
+	case Mud:
+		return clr("#3F3222")
+	case Grass:
+		return clr("#2B8C28")
 	case Rock, Pebbles:
-		hex = "#9DAAB0"
+		return clr("#9DAAB0")
 	default:
-		hex = "#fdffcc"
+		return clr("#fdffcc")
 	}
+}
+
+func clr(hex string) colorful.Color {
 	c, _ := colorful.Hex(hex)
 	return c
 }
@@ -105,19 +113,22 @@ func (e entity) Harvestable() bool {
 	return e.flora != nil
 }
 
-type Class int
-type Subclass int
+func (e entity) Occupied() bool {
+	if e.npc != nil || e.player != nil {
+		return true
+	}
+	if e.flora != nil {
+		return !e.flora.walkable
+	}
+	return false
+}
+
+type Environment int
 
 const Unknown = "? "
 
 const (
-	Being Class = iota // eg, creature/player
-	Thing              // eg, item
-	Environment
-)
-
-const (
-	Default Subclass = iota // some classes don't need a subclass
+	None Environment = iota // signifies that this is not an environment
 	WallBlock
 	WallCornerNE
 	WallCornerSE
@@ -126,41 +137,38 @@ const (
 	Floor
 	Space
 	Water
+	Mud
 	Grass
 	Rock
 	Pebbles
-	Tree
 )
 
-var tileMap = map[Class]map[Subclass][]string{
-	Environment: {
-		WallCornerNE: {"◣ "},
-		WallCornerSE: {"◤ "},
-		WallCornerSW: {"◥ "},
-		WallCornerNW: {"◢ "},
-		Floor:        {".."},
-		Space:        {"  "},
-		Water:        {"≈≈"},
-		Grass:        {"''", "\"'"},
-		Rock:         {"姅", "艫", "蠨"},
-		Pebbles:      {"፨፨"},
-		Tree:         {"个", "丫"},
-		Default:      {"猫"},
-	},
-	Thing: {
-		Default: {"i "},
-	},
-	Being: {
-		Default: {"& "},
-	},
+// todo ground cover to add
+// Dwarf Birch
+// Dwarf Juniper
+// Downy Willow (#969BA4) at 200–900m on rocky mountain slopes and cliffs
+// Woolly Willow (#7D8A7B) at 600-900m on rocky mountain sides
+// Net-leaved Willow (#62831F) at? 300-500m on wet rocks and ledges
+// Dwarf Willow (#1F3017) at 0-1500m in tundra and rock moorland
+
+var environmentTiles = map[Environment][]string{
+	WallCornerNE: {"◣ "},
+	WallCornerSE: {"◤ "},
+	WallCornerSW: {"◥ "},
+	WallCornerNW: {"◢ "},
+	Floor:        {".."},
+	Space:        {"  "},
+	Water:        {"≈≈"},
+	Mud:          {",'", "',"},
+	Grass:        {"''", "\"'"},
+	Rock:         {"姅", "艫", "蠨"},
+	Pebbles:      {"፨፨"},
+	// Tree:         {"个", "丫"},
+	// Default:      {"猫"},
 }
 
-func tile(class Class, subclass Subclass, variant int) string {
-	if submap, ok := tileMap[class]; ok {
-		v := submap[Default]
-		if m, ok := submap[subclass]; ok {
-			v = m
-		}
+func environmentTile(e Environment, variant int) string {
+	if v, ok := environmentTiles[e]; ok {
 		return v[variant%len(v)]
 	}
 	return Unknown

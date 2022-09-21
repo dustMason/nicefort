@@ -1,9 +1,5 @@
 package world
 
-import "math/rand"
-
-var lightWoodColor = "#cccc00"
-
 type ItemTraits int64
 
 const (
@@ -11,6 +7,7 @@ const (
 	Digger
 	Axe
 	Knife
+	Edible
 )
 
 type Item struct {
@@ -39,6 +36,9 @@ func (i Item) Damage() int {
 	return 10
 }
 
+// Power is a catch-all value for the effectiveness of the item. It can signify:
+// - weapon strength
+// - harvesting speed
 func (i Item) Power() float64 {
 	return i.power
 }
@@ -50,6 +50,13 @@ type InventoryItem struct {
 
 func (ii InventoryItem) Weight() float64 {
 	return float64(ii.Quantity) * ii.Item.Weight
+}
+
+func ActivateEdible(nutrition float64) func(*entity, *World) bool {
+	return func(e *entity, w *World) bool {
+		e.player.Eat(nutrition)
+		return true
+	}
 }
 
 func newItem(id, name, icon, color string, weight, power float64, traits ItemTraits, activate func(*entity, *World) bool) Item {
@@ -77,43 +84,3 @@ var BareHands = newItem(
 )
 
 var SharpRock = newItem("sharp-rock", "Sharp Rock", "d ", "#444", 0.05, 0.02, Knife, nil)
-
-var TestItem = newItem(
-	"test-item",
-	"Test Item",
-	"!",
-	lightWoodColor,
-	0.1,
-	0,
-	0,
-	func(e *entity, world *World) bool {
-		e.player.Heal(rand.Intn(3))
-		return true
-	},
-)
-
-var PineWood = newItem("pine-wood", "Pine Wood", "==", lightWoodColor, 0.75, 0, 0, nil)
-var PineBark = newItem("pine-bark", "Pine Bark", "~ ", lightWoodColor, 0.1, 0, 0, nil)
-var SpruceWood = newItem("spruce-wood", "Spruce Wood", "==", lightWoodColor, 0.75, 0, 0, nil)
-var AspenWood = newItem("aspen-wood", "Aspen Wood", "==", lightWoodColor, 0.75, 0, 0, nil)
-
-// var TestItem2 = Item{
-// 	ID:     "test-item2",
-// 	Name:   "Test Item 2",
-// 	Weight: 0.1,
-// 	icon:   "22",
-// }
-//
-// var TestItem3 = Item{
-// 	ID:     "test-item3",
-// 	Name:   "Test Item 3",
-// 	Weight: 1.,
-// 	icon:   "33",
-// }
-//
-// var TestItem4 = Item{
-// 	ID:     "test-item4",
-// 	Name:   "Test Item 4",
-// 	Weight: 1.,
-// 	icon:   "44",
-// }

@@ -72,7 +72,7 @@ func NewPlayer(id string, c Coord) *entity {
 		// wielding: &SharpRock,
 	}
 
-	return &entity{class: Being, player: p}
+	return &entity{player: p}
 }
 
 func (p *player) Tick(t time.Time) {
@@ -165,4 +165,11 @@ func (p *player) GetLocation() (int, int) {
 func (p *player) SetLocation(x, y int, t time.Time) {
 	p.lastMoved = t
 	p.loc = Coord{x, y}
+}
+
+func (p *player) Eat(nutrition float64) {
+	p.hunger -= nutrition
+	if p.hunger < 0 {
+		p.hunger = 0
+	}
 }

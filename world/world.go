@@ -15,7 +15,7 @@ import (
 
 const NPCActivationRadius = 10 // approx. distance from any player where NPCs take turns
 const secondsPerDay = 6.66     // seconds of real-world clock time per in-game day
-var blackSpace = tileMap[Environment][Space][0]
+var blackSpace = environmentTiles[Space][0]
 var memColor = "#444444"
 var memStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(memColor))
 
@@ -112,7 +112,95 @@ func (w *World) runTicker() {
 
 func (w *World) MovePlayer(dx, dy int, playerID string) {
 	e := w.getPlayer(playerID)
-	w.movePlayer(e, dx, dy)
+	nx, ny := e.player.GetLocation()
+	nx += dx
+	ny += dy
+	now := time.Now()
+	if !e.player.CanMove(now) {
+		return
+	}
+	w.Lock()
+	defer w.Unlock()
+	newIndex := w.index(nx, ny)
+	if w.InBounds(nx, ny) {
+		if ent, ok := w.attackable(nx, ny); ok {
+			damage, success, dead, drops := ent.npc.Attacked(e.player.wielding, e, 10)
+			if dead {
+				e.player.Event(events.Success, fmt.Sprintf("You killed the %s", ent.npc.Name))
+				i := w.index(nx, ny)
+				w.wMap[i] = removeEntity(w.wMap[i], ent)
+				for _, drop := range drops {
+					e.player.Event(events.Success, fmt.Sprintf("It dropped %d x %s", drop.Quantity, drop.Item.Name))
+					ni, _ := w.findNearbyAvailableIndex(nx, ny)
+					w.wMap[ni] = addEntity(w.wMap[ni], &entity{item: drop.Item, quantity: drop.Quantity})
+				}
+			} else if !success {
+				e.player.Event(events.Warning, fmt.Sprintf("Your %s doesn't do anything to the %s", e.player.wielding.Name, ent.npc.Name))
+			} else {
+				e.player.Event(events.Success, fmt.Sprintf("You hit the %s for %d", ent.npc.Name, damage))
+			}
+			return
+		}
+		if w.walkable(nx, ny) && !w.occupied(nx, ny) {
+			oldX, oldY := e.player.GetLocation()
+			oldIndex := w.index(oldX, oldY)
+			w.wMap[newIndex] = append(w.wMap[newIndex], e)
+			w.wMap[oldIndex] = removeEntity(w.wMap[oldIndex], e)
+			e.player.SetLocation(nx, ny, now)
+			e.player.See(w)
+			w.refreshActiveNPCs()
+			return
+		}
+		if ent, ok := w.harvestable(nx, ny); ok {
+			w.harvest(e.player, ent, nx, ny)
+			return
+		}
+	}
+}
+
+func (w *World) InteractPlayer(playerID string) {
+	fmt.Println("interact")
+	e := w.getPlayer(playerID)
+	now := time.Now()
+	if !e.player.CanMove(now) {
+		return
+	}
+	x, y := e.player.GetLocation()
+	index := w.index(x, y)
+	w.Lock()
+	defer w.Unlock()
+	if ent, ok := w.harvestable(x, y); ok {
+		w.harvest(e.player, ent, x, y)
+		return
+	}
+	if ee, ok := w.pickupable(x, y); ok {
+		took := e.player.PickUp(ee.item, ee.quantity)
+		ee.quantity -= took
+		if ee.quantity == 0 {
+			w.wMap[index] = removeEntity(w.wMap[index], ee)
+		}
+		return
+	}
+}
+
+func (w *World) harvest(player *player, ent *entity, x, y int) {
+	dead, success, _, drops := ent.flora.Harvest(player.wielding)
+	for _, drop := range drops {
+		player.Event(events.Success, fmt.Sprintf("It yielded %d x %s", drop.Quantity, drop.Item.Name))
+		i, _ := w.findNearbyAvailableIndex(x, y)
+		w.wMap[i] = addEntity(w.wMap[i], &entity{item: drop.Item, quantity: drop.Quantity})
+	}
+	if dead {
+		player.Event(events.Success, fmt.Sprintf("You harvested the %s", ent.flora.name))
+		i := w.index(x, y)
+		w.wMap[i] = removeEntity(w.wMap[i], ent)
+	} else if !success {
+		// handle the case where the ent is exhausted. "you can't harvest any more with your x"
+		player.Event(events.Warning, fmt.Sprintf("Your %s does not work here", player.wielding.Name))
+	} else {
+		// show progress bar?
+	}
+
 }
 
 func (w *World) MoveNPC(x, y int, e *entity) {
@@ -168,7 +256,7 @@ func (w *World) RenderPlayerEvents(playerID string) string {
 }
 
 func (w *World) RenderMap(playerID, playerName string, vw, vh int) string {
-	vw = vw / 2 // each tile is 2 chars wide
+	vw = vw / 2 // each environmentTile is 2 chars wide
 	ply := w.getOrCreatePlayer(playerID, playerName).player
 	x, y := ply.GetLocation()
 	seen := ply.AllVisited()
@@ -343,72 +431,6 @@ func (w *World) isPlayerAtLocation(e *entity, x, y int) bool {
 	return false
 }
 
-func (w *World) movePlayer(e *entity, dx, dy int) {
-	nx, ny := e.player.GetLocation()
-	nx += dx
-	ny += dy
-	now := time.Now()
-	if !e.player.CanMove(now) {
-		return
-	}
-	w.Lock()
-	defer w.Unlock()
-	newIndex := w.index(nx, ny)
-	if w.InBounds(nx, ny) {
-		if ent, ok := w.pickupable(nx, ny); ok {
-			took := e.player.PickUp(ent.item, ent.quantity)
-			ent.quantity -= took
-			if ent.quantity == 0 {
-				w.wMap[newIndex] = removeEntity(w.wMap[newIndex], ent)
-			}
-			return
-		}
-		if ent, ok := w.attackable(nx, ny); ok {
-			damage, success, dead, _ := ent.npc.Attacked(e.player.wielding, e, 10)
-			if dead {
-				e.player.Event(events.Success, fmt.Sprintf("You killed the %s", ent.npc.Name))
-				i := w.index(nx, ny)
-				w.wMap[i] = removeEntity(w.wMap[i], ent)
-				// todo handle drops
-			} else if !success {
-				e.player.Event(events.Warning, fmt.Sprintf("Your %s doesn't do anything to the %s", e.player.wielding.Name, ent.npc.Name))
-			} else {
-				e.player.Event(events.Success, fmt.Sprintf("You hit the %s for %d", ent.npc.Name, damage))
-			}
-			return
-		}
-		if ent, ok := w.harvestable(nx, ny); ok {
-			dead, success, _, drops := ent.flora.Harvest(e.player.wielding)
-			if len(drops) > 0 {
-				// todo handle multiple drops
-				e.player.Event(events.Success, fmt.Sprintf("It yielded %d x %s", drops[0].Quantity, drops[0].Item.Name))
-				i, _ := w.findNearbyAvailableIndex(nx, ny)
-				w.wMap[i] = addEntity(w.wMap[i], &entity{class: Thing, item: drops[0].Item, quantity: drops[0].Quantity})
-			}
-			if dead {
-				e.player.Event(events.Success, fmt.Sprintf("You harvested the %s", ent.flora.name))
-				i := w.index(nx, ny)
-				w.wMap[i] = removeEntity(w.wMap[i], ent)
-			} else if !success {
-				e.player.Event(events.Warning, fmt.Sprintf("Your %s does not work here", e.player.wielding.Name))
-			} else {
-				// show progress bar?
-			}
-			return
-		}
-		if w.walkable(nx, ny) && !w.occupied(nx, ny) {
-			oldX, oldY := e.player.GetLocation()
-			oldIndex := w.index(oldX, oldY)
-			w.wMap[newIndex] = append(w.wMap[newIndex], e)
-			w.wMap[oldIndex] = removeEntity(w.wMap[oldIndex], e)
-			e.player.SetLocation(nx, ny, now)
-			e.player.See(w)
-			w.refreshActiveNPCs()
-			return
-		}
-	}
-}
-
 func (w *World) randomAvailableCoord() (int, int, error) {
 	tries := 1000
 	for tries > 0 {
@@ -446,7 +468,7 @@ func (w *World) walkable(x, y int) bool {
 
 func (w *World) occupied(x, y int) bool {
 	for _, e := range w.location(x, y) {
-		if e.class != Environment {
+		if e.Occupied() {
 			return true
 		}
 	}

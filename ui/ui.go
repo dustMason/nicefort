@@ -85,6 +85,7 @@ type keyMap struct {
 	FocusChat      key.Binding
 	FocusInventory key.Binding
 	Enter          key.Binding
+	Space          key.Binding
 	Tab            key.Binding
 	Esc            key.Binding
 	Quit           key.Binding
@@ -132,6 +133,9 @@ var keys = keyMap{
 	),
 	Enter: key.NewBinding(
 		key.WithKeys("enter"),
+	),
+	Space: key.NewBinding(
+		key.WithKeys(" "),
 	),
 	Tab: key.NewBinding(
 		key.WithKeys("tab"),
@@ -209,6 +213,8 @@ func (m UIModel) handleMapModeMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.world.MovePlayer(1, 0, m.playerID)
 		case key.Matches(msg, m.keys.Help):
 			m.help.ShowAll = !m.help.ShowAll
+		case key.Matches(msg, m.keys.Space):
+			m.world.InteractPlayer(m.playerID)
 		case key.Matches(msg, m.keys.FocusChat):
 			if !m.chatInput.Focused() {
 				m.chatInput.Focus()
