@@ -21,12 +21,15 @@ type NPC struct {
 	targets   map[*entity]struct{} // the player(s) to run from/to
 	drop      []*InventoryItem
 	behavior  behavior
+	damagedBy damagedBy
 	loc       Coord
 	lastMoved time.Time
 	dead      bool
 }
 
 type behavior func(w *World, e *entity) // todo a function that determines what this npc does next
+// todo refactor damageBy to work with types of damage, not traits of items
+type damagedBy func(*Item) (bool, int) // given an item ID (wielded by player) return amount of damage done
 type mood int
 
 const (
@@ -65,14 +68,15 @@ func (n *NPC) Attackable() bool {
 }
 
 // Attacked returns the amount of damage done, whether the npc is alive, and any items dropped
-func (n *NPC) Attacked(e *entity, damage int) (int, bool, []*InventoryItem) {
-	n.health -= damage
+func (n *NPC) Attacked(by *Item, e *entity, damage int) (int, bool, bool, []*InventoryItem) {
+	success, amount := n.damagedBy(by)
+	n.health -= amount
 	n.targets[e] = struct{}{}
 	if n.health <= 0 {
 		n.dead = true
-		return damage, true, n.drop
+		return damage, true, true, n.drop
 	}
-	return damage, false, nil
+	return damage, success, false, nil
 }
 
 func newNPC(name, icon string, speed float64, health int, b behavior, x, y int) *NPC {
@@ -82,9 +86,17 @@ func newNPC(name, icon string, speed float64, health int, b behavior, x, y int) 
 		baseSpeed: speed,
 		health:    health,
 		behavior:  b,
+		damagedBy: anyWeapon,
 		loc:       Coord{x, y},
 		targets:   make(map[*entity]struct{}),
 	}
+}
+
+func anyWeapon(i *Item) (bool, int) {
+	if i.HasTrait(Weapon) {
+		return true, i.Damage()
+	}
+	return false, 0
 }
 
 // normally doesn't care about players. runs away when attacked

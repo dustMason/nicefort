@@ -42,7 +42,7 @@ ssh -p 23234 jordan@127.0.0.1
     - library of plant entities
       - research medicinal plants
     - growth loop
-    - harvesting
+    - [x] harvesting
     - NPCs that eat/trample crops
   - crafting
     - stone tools
@@ -66,6 +66,7 @@ ssh -p 23234 jordan@127.0.0.1
   - `g` to pick up entity player is standing on instead of moving towards
   - mouse support
   - render event types with color/style
+- refactor: instead of entity fields `npc`, `player`, `flora` make `NPC`, `player`, `Flora` each embed `entity`. Then switch statements can handle current `attackable`, `harvestable` scenarios. Make a new type `ItemEntity`.
 - better map view
   - don't scroll with each move. fit the level on the screen
   - current player renders as `@`, other players use first initial

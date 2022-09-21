@@ -16,7 +16,7 @@ type Recipe struct {
 	condition   condition
 }
 
-func AvailableRecipes(im map[int]*InventoryItem, e *entity, w *World) []Recipe {
+func AvailableRecipes(im map[string]*InventoryItem, e *entity, w *World) []Recipe {
 	out := make([]Recipe, 0)
 	for _, r := range AllRecipes {
 		if r.Check(im, e, w) {
@@ -39,7 +39,7 @@ func FindRecipe(id int) (bool, Recipe) {
 	return ok, found
 }
 
-type condition func(map[int]*InventoryItem, *entity, *World) (bool, map[int]int)
+type condition func(map[string]*InventoryItem, *entity, *World) (bool, map[string]int)
 
 func NewSimpleRecipe(result *Item, id int, ing ...InventoryItem) Recipe {
 	parts := make([]string, len(ing))
@@ -54,12 +54,12 @@ func NewSimpleRecipe(result *Item, id int, ing ...InventoryItem) Recipe {
 	}
 }
 
-func (r *Recipe) Check(inv map[int]*InventoryItem, e *entity, w *World) bool {
+func (r *Recipe) Check(inv map[string]*InventoryItem, e *entity, w *World) bool {
 	ok, _ := r.condition(inv, e, w)
 	return ok
 }
 
-func (r *Recipe) Do(inv map[int]*InventoryItem, e *entity, w *World) (bool, map[int]*InventoryItem) {
+func (r *Recipe) Do(inv map[string]*InventoryItem, e *entity, w *World) (bool, map[string]*InventoryItem) {
 	ok, cost := r.condition(inv, e, w)
 	if !ok {
 		return false, inv
@@ -74,9 +74,12 @@ func (r *Recipe) Do(inv map[int]*InventoryItem, e *entity, w *World) (bool, map[
 	return true, inv
 }
 
+// todo make condition func that checks if we are standing next to a cooking fire
+// and if we have a watertight cooking vessel
+
 func ingredientsCondition(ingredients ...InventoryItem) condition {
-	return func(inventoryMap map[int]*InventoryItem, e *entity, w *World) (bool, map[int]int) {
-		out := make(map[int]int)
+	return func(inventoryMap map[string]*InventoryItem, e *entity, w *World) (bool, map[string]int) {
+		out := make(map[string]int)
 		for _, i := range ingredients {
 			pi, ok := inventoryMap[i.Item.ID]
 			if !ok || pi.Quantity < i.Quantity {
@@ -89,12 +92,12 @@ func ingredientsCondition(ingredients ...InventoryItem) condition {
 }
 
 var AllRecipes = []Recipe{
-	NewSimpleRecipe(&TestItem3, 1,
-		InventoryItem{Item: &TestItem, Quantity: 3},
-		InventoryItem{Item: &TestItem2, Quantity: 1},
-	),
-	NewSimpleRecipe(&TestItem4, 2,
-		InventoryItem{Item: &TestItem3, Quantity: 1},
-		InventoryItem{Item: &TestItem, Quantity: 10},
-	),
+	// NewSimpleRecipe(&TestItem3, 1,
+	// 	InventoryItem{Item: &TestItem, Quantity: 3},
+	// 	InventoryItem{Item: &TestItem2, Quantity: 1},
+	// ),
+	// NewSimpleRecipe(&TestItem4, 2,
+	// 	InventoryItem{Item: &TestItem3, Quantity: 1},
+	// 	InventoryItem{Item: &TestItem, Quantity: 10},
+	// ),
 }

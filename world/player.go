@@ -18,10 +18,11 @@ type player struct {
 	loc          Coord
 	mapMem       map[Coord]string // map of what player knows on current world
 	view         *fov.View
-	inventoryMap map[int]*InventoryItem // map of item id => inventoryItem
+	inventoryMap map[string]*InventoryItem // map of item id => inventoryItem
 	inventory    []*InventoryItem
 	moveSpeed    float64 // 0 < n < 1.0
 	events       *events.EventList
+	wielding     *Item
 
 	// counters
 	carrying  float64
@@ -56,7 +57,7 @@ func NewPlayer(id string, c Coord) *entity {
 		loc:          c,
 		mapMem:       make(map[Coord]string),
 		view:         fov.New(),
-		inventoryMap: make(map[int]*InventoryItem),
+		inventoryMap: make(map[string]*InventoryItem),
 		inventory:    make([]*InventoryItem, 0),
 		maxCarry:     50.,
 		maxHealth:    20,
@@ -66,7 +67,11 @@ func NewPlayer(id string, c Coord) *entity {
 		hunger:       0.,
 		events:       events.NewEventList(4),
 		lastTick:     time.Now(),
+		wielding:     &BareHands,
+		// testing
+		// wielding: &SharpRock,
 	}
+
 	return &entity{class: Being, player: p}
 }
 
@@ -134,7 +139,7 @@ func (p *player) Heal(h int) {
 	}
 }
 
-func (p *player) ReplaceInventory(inv map[int]*InventoryItem) {
+func (p *player) ReplaceInventory(inv map[string]*InventoryItem) {
 	p.Lock()
 	defer p.Unlock()
 	p.inventoryMap = inv

@@ -40,6 +40,10 @@ func GenerateOverworld(size int) []location {
 				loc = location{{class: Environment, subclass: Grass, variant: v}}
 				if r < 100 {
 					loc = append(loc, &entity{class: Environment, subclass: Tree, variant: v})
+				} else if r < 150 {
+					loc = append(loc, &entity{class: Thing, flora: Aspen()})
+				} else if r < 200 {
+					loc = append(loc, &entity{class: Thing, flora: ScotsPine()})
 				}
 				stats["woods"] += 1
 
@@ -47,8 +51,6 @@ func GenerateOverworld(size int) []location {
 				loc = location{{class: Environment, subclass: Pebbles, variant: v}}
 				if r == 1 {
 					loc = append(loc, &entity{item: &TestItem, quantity: rand.Intn(4) + 1, class: Thing})
-				} else if r == 2 {
-					loc = append(loc, &entity{item: &TestItem2, quantity: 1, class: Thing})
 				}
 				stats["scrub"] += 1
 

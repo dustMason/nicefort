@@ -68,6 +68,16 @@ func removeEntity(l location, e *entity) location {
 	return ret
 }
 
+func addEntity(l location, e *entity) location {
+	ret := make(location, 0)
+	for _, ent := range l {
+		ret = append(ret, ent)
+	}
+	ret = append(ret, e)
+	return ret
+
+}
+
 func NewWorld(size int) *World {
 	w := &World{
 		W:        size,
@@ -354,14 +364,35 @@ func (w *World) movePlayer(e *entity, dx, dy int) {
 			return
 		}
 		if ent, ok := w.attackable(nx, ny); ok {
-			damage, dead, _ := ent.npc.Attacked(e, 10)
+			damage, success, dead, _ := ent.npc.Attacked(e.player.wielding, e, 10)
 			if dead {
 				e.player.Event(events.Success, fmt.Sprintf("You killed the %s", ent.npc.Name))
-				i := w.index(ent.npc.loc.X, ent.npc.loc.Y)
+				i := w.index(nx, ny)
 				w.wMap[i] = removeEntity(w.wMap[i], ent)
 				// todo handle drops
+			} else if !success {
+				e.player.Event(events.Warning, fmt.Sprintf("Your %s doesn't do anything to the %s", e.player.wielding.Name, ent.npc.Name))
 			} else {
 				e.player.Event(events.Success, fmt.Sprintf("You hit the %s for %d", ent.npc.Name, damage))
+			}
+			return
+		}
+		if ent, ok := w.harvestable(nx, ny); ok {
+			dead, success, _, drops := ent.flora.Harvest(e.player.wielding)
+			if len(drops) > 0 {
+				// todo handle multiple drops
+				e.player.Event(events.Success, fmt.Sprintf("It yielded %d x %s", drops[0].Quantity, drops[0].Item.Name))
+				i, _ := w.findNearbyAvailableIndex(nx, ny)
+				w.wMap[i] = addEntity(w.wMap[i], &entity{class: Thing, item: drops[0].Item, quantity: drops[0].Quantity})
+			}
+			if dead {
+				e.player.Event(events.Success, fmt.Sprintf("You harvested the %s", ent.flora.name))
+				i := w.index(nx, ny)
+				w.wMap[i] = removeEntity(w.wMap[i], ent)
+			} else if !success {
+				e.player.Event(events.Warning, fmt.Sprintf("Your %s does not work here", e.player.wielding.Name))
+			} else {
+				// show progress bar?
 			}
 			return
 		}
@@ -440,6 +471,15 @@ func (w *World) attackable(x int, y int) (*entity, bool) {
 	return nil, false
 }
 
+func (w *World) harvestable(x int, y int) (*entity, bool) {
+	for _, e := range w.location(x, y) {
+		if e.Harvestable() {
+			return e, true
+		}
+	}
+	return nil, false
+}
+
 func (w *World) index(x, y int) int {
 	return y*w.W + x
 }
@@ -480,6 +520,38 @@ func (w *World) disconnectPlayer(e *entity) {
 	x, y := e.player.GetLocation()
 	i := w.index(x, y)
 	w.wMap[i] = removeEntity(w.wMap[i], e)
+}
+
+func (w *World) neighbors(x, y int) []Coord {
+	return []Coord{
+		Coord{x + 1, y},
+		Coord{x - 1, y},
+		Coord{x, y - 1},
+		Coord{x, y + 1},
+	}
+}
+
+// findNearbyAvailableIndex does a simple BFS to find an empty location
+func (w *World) findNearbyAvailableIndex(x int, y int) (int, error) {
+	seen := map[Coord]struct{}{}
+	stack := w.neighbors(x, y)
+	for len(stack) > 0 {
+		c := stack[0]
+		stack = stack[1:]
+		if !w.InBounds(c.X, c.Y) {
+			continue
+		}
+		if !w.occupied(c.X, c.Y) {
+			return w.index(c.X, c.Y), nil
+		}
+		_, ok := seen[c]
+		if ok {
+			continue
+		}
+		seen[c] = struct{}{}
+		stack = append(stack, w.neighbors(c.X, c.Y)...)
+	}
+	return 0, errors.New("could not find an available coordinate")
 }
 
 // compassIndicator returns a string like "↖ 30"

@@ -11,6 +11,7 @@ type entity struct {
 	player   *player
 	npc      *NPC
 	item     *Item
+	flora    *Flora
 	quantity int
 	variant  int // 0 < n < 10, random value decided at worldgen time to use for visual texture
 	// todo move the loc field here
@@ -29,6 +30,9 @@ func (e entity) String() string {
 	}
 	if e.item != nil {
 		return e.item.String()
+	}
+	if e.flora != nil {
+		return e.flora.String()
 	}
 	return tile(e.class, e.subclass, e.variant)
 }
@@ -97,6 +101,9 @@ func (e entity) baseColor() colorful.Color {
 func (e entity) Attackable() bool {
 	return e.npc != nil
 }
+func (e entity) Harvestable() bool {
+	return e.flora != nil
+}
 
 type Class int
 type Subclass int
@@ -104,8 +111,8 @@ type Subclass int
 const Unknown = "? "
 
 const (
-	Being Class = iota
-	Thing
+	Being Class = iota // eg, creature/player
+	Thing              // eg, item
 	Environment
 )
 
