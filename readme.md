@@ -30,7 +30,6 @@ ssh -p 23234 jordan@127.0.0.1
     - always off-screen (not near player)
     - progressively harder with each year
 - survival gameplay
-  - think of years as levels
   - tools (axe, shovel, etc)
     - [x] game support
     - list of actual items

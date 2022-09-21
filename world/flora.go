@@ -69,7 +69,7 @@ func newFlora(id, name, icon, color string, walkable bool, h harvestFunc) *Flora
 	}
 }
 
-func newFloraProduct(id, name, icon, color string, weight float64, activate func(*entity, *World) bool) *Item {
+func newFloraProduct(id, name, icon, color string, weight float64, activate func(*entity, *World) (bool, string)) *Item {
 	return &Item{ID: id, Name: name, Weight: weight, icon: icon, color: color, traits: 0, power: 0, activate: activate}
 }
 
@@ -291,4 +291,4 @@ func CloudberryBush() *Flora {
 	)
 }
 
-var Cloudberries = newFloraProduct("cloudberries", "Cloudberries", ". ", "#FAB3BD", 0.01, ActivateEdible(0.05))
+var Cloudberries = newFloraProduct("cloudberries", "Cloudberries", ". ", "#FAB3BD", 0.01, ActivateEdible(0.05, "You ate a handful of delicious cloudberries"))

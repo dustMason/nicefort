@@ -252,6 +252,7 @@ func (m UIModel) handleInventoryModeMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case key.Matches(msg, m.keys.Enter):
 			if m.inventoryMode == InventoryList {
+				fmt.Println(m.inventory.SelectedRow())
 				i, _ := strconv.Atoi(m.inventory.SelectedRow()[0])
 				m.world.ActivateItem(m.playerID, i)
 				m.mode = Map
@@ -284,6 +285,7 @@ func (m UIModel) handleInventoryModeMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m UIModel) createInventoryTable() table.Model {
 	// todo fix these widths to handle flexible viewport width
 	columns := []table.Column{
+		{Title: "#", Width: 3},
 		{Title: "Item", Width: 45},
 		{Title: "Qty", Width: 5},
 		{Title: "Weight", Width: 8},
@@ -313,7 +315,7 @@ func (m UIModel) createInventoryTableRows() []table.Row {
 	ii := m.world.PlayerInventory(m.playerID)
 	rows := make([]table.Row, len(ii))
 	for ind, i := range ii {
-		rows[ind] = table.Row{i.Item.Name, strconv.Itoa(i.Quantity), fmt.Sprintf("%.1f", i.Weight())}
+		rows[ind] = table.Row{strconv.Itoa(ind), i.Item.Name, strconv.Itoa(i.Quantity), fmt.Sprintf("%.1f", i.Weight())}
 	}
 	return rows
 }

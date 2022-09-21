@@ -125,6 +125,7 @@ func (w *World) MovePlayer(dx, dy int, playerID string) {
 	if w.InBounds(nx, ny) {
 		if ent, ok := w.attackable(nx, ny); ok {
 			damage, success, dead, drops := ent.npc.Attacked(e.player.wielding, e, 10)
+			// todo need a progress calc to use Activity
 			if dead {
 				e.player.Event(events.Success, fmt.Sprintf("You killed the %s", ent.npc.Name))
 				i := w.index(nx, ny)
@@ -159,7 +160,6 @@ func (w *World) MovePlayer(dx, dy int, playerID string) {
 }
 
 func (w *World) InteractPlayer(playerID string) {
-	fmt.Println("interact")
 	e := w.getPlayer(playerID)
 	now := time.Now()
 	if !e.player.CanMove(now) {
@@ -184,7 +184,8 @@ func (w *World) InteractPlayer(playerID string) {
 }
 
 func (w *World) harvest(player *player, ent *entity, x, y int) {
-	dead, success, _, drops := ent.flora.Harvest(player.wielding)
+	dead, success, progress, drops := ent.flora.Harvest(player.wielding)
+	player.SetActivity(Activity{description: ent.flora.name, progress: progress})
 	for _, drop := range drops {
 		player.Event(events.Success, fmt.Sprintf("It yielded %d x %s", drop.Quantity, drop.Item.Name))
 		i, _ := w.findNearbyAvailableIndex(x, y)
@@ -216,8 +217,14 @@ func (w *World) MoveNPC(x, y int, e *entity) {
 }
 
 func (w *World) ActivateItem(playerID string, inventoryIndex int) {
-	// todo get the item from the player's inventory and activate it!
-	// call a method on the player to consumer the item if the activate function returns true
+	fmt.Println("activating item index", inventoryIndex)
+	e := w.getPlayer(playerID)
+	ii := e.player.inventory[inventoryIndex]
+	consumed, message := ii.Item.Activate(e, w)
+	e.player.Event(events.Info, message)
+	if consumed {
+		e.player.ConsumeItem(ii.Item)
+	}
 }
 
 func (w *World) PlayerInventory(playerID string) []*InventoryItem {
@@ -324,9 +331,16 @@ func (w *World) RenderPlayerSidebar(id string, name string) string {
 	b.WriteString(name + "\n")
 	b.WriteString(fmt.Sprintf("Pack: %.1f / %d\n", e.player.carrying, int(e.player.maxCarry)))
 	b.WriteString(fmt.Sprintf("Health: %d / %d\n", e.player.health, e.player.maxHealth))
-	b.WriteString(fmt.Sprintf("Cash: $%d\n", e.player.money))
 	b.WriteString(fmt.Sprintf("Hunger: %.3f\n", e.player.hunger))
 	b.WriteString("\n")
+	b.WriteString(fmt.Sprintf("Wielding: %s\n", e.player.wielding.Name))
+	b.WriteString("\n")
+
+	a := e.player.GetActivity()
+	if a.description != "" {
+		// todo render a real progress bar with https://github.com/charmbracelet/bubbles/tree/master/progress
+		b.WriteString(fmt.Sprintf("%s\n%.1f\n", a.description, a.progress))
+	}
 
 	for _, ee := range w.players {
 		if ee == e {
@@ -563,7 +577,7 @@ func (w *World) findNearbyAvailableIndex(x int, y int) (int, error) {
 		if !w.InBounds(c.X, c.Y) {
 			continue
 		}
-		if !w.occupied(c.X, c.Y) {
+		if !w.occupied(c.X, c.Y) && w.walkable(c.X, c.Y) {
 			return w.index(c.X, c.Y), nil
 		}
 		_, ok := seen[c]

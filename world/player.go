@@ -11,18 +11,24 @@ import (
 
 const hungerRate = 1.0 / 60 / 60 // how much of total hunger to experience per second. 1/60/60 == must eat once per hour
 
+type Activity struct {
+	description string
+	progress    float64 // percentage progress (0 < n < 1.0)
+}
+
 type player struct {
 	sync.RWMutex
-	id           string // the ssh pubkey of the connected player
-	name         string
-	loc          Coord
-	mapMem       map[Coord]string // map of what player knows on current world
-	view         *fov.View
-	inventoryMap map[string]*InventoryItem // map of item id => inventoryItem
-	inventory    []*InventoryItem
-	moveSpeed    float64 // 0 < n < 1.0
-	events       *events.EventList
-	wielding     *Item
+	id              string // the ssh pubkey of the connected player
+	name            string
+	loc             Coord
+	mapMem          map[Coord]string // map of what player knows on current world
+	view            *fov.View
+	inventoryMap    map[string]*InventoryItem // map of item id => inventoryItem
+	inventory       []*InventoryItem
+	moveSpeed       float64 // 0 < n < 1.0
+	events          *events.EventList
+	wielding        *Item
+	currentActivity Activity
 
 	// counters
 	carrying  float64
@@ -128,8 +134,27 @@ func (p *player) PickUp(i *Item, quantity int) int {
 	return pickedUp
 }
 
-func (p *player) Inventory() []*InventoryItem {
-	return p.inventory
+func (p *player) ConsumeItem(i *Item) {
+	p.inventoryMap[i.ID].Quantity -= 1
+	if p.inventoryMap[i.ID].Quantity < 1 {
+		delete(p.inventoryMap, i.ID)
+		p.ReplaceInventory(p.inventoryMap)
+	}
+}
+
+func (p *player) Eat(nutrition float64) {
+	p.hunger -= nutrition
+	if p.hunger < 0 {
+		p.hunger = 0
+	}
+}
+
+func (p *player) GetActivity() Activity {
+	return p.currentActivity
+}
+
+func (p *player) SetActivity(a Activity) {
+	p.currentActivity = a
 }
 
 func (p *player) Heal(h int) {
@@ -137,6 +162,10 @@ func (p *player) Heal(h int) {
 	if p.health > p.maxHealth {
 		p.health = p.maxHealth
 	}
+}
+
+func (p *player) Inventory() []*InventoryItem {
+	return p.inventory
 }
 
 func (p *player) ReplaceInventory(inv map[string]*InventoryItem) {
@@ -165,11 +194,4 @@ func (p *player) GetLocation() (int, int) {
 func (p *player) SetLocation(x, y int, t time.Time) {
 	p.lastMoved = t
 	p.loc = Coord{x, y}
-}
-
-func (p *player) Eat(nutrition float64) {
-	p.hunger -= nutrition
-	if p.hunger < 0 {
-		p.hunger = 0
-	}
 }

@@ -15,7 +15,7 @@ type Item struct {
 	Name        string
 	Description string
 	Weight      float64
-	activate    func(*entity, *World) bool // accepts the player and world, returns true if the item is consumed
+	activate    func(*entity, *World) (bool, string) // accepts the player and world, returns true if the item is consumed, along with a message
 	icon        string
 	color       string
 	traits      ItemTraits
@@ -43,6 +43,13 @@ func (i Item) Power() float64 {
 	return i.power
 }
 
+func (i Item) Activate(e *entity, w *World) (bool, string) {
+	if i.activate == nil {
+		return false, ""
+	}
+	return i.activate(e, w)
+}
+
 type InventoryItem struct {
 	Item     *Item
 	Quantity int
@@ -52,14 +59,14 @@ func (ii InventoryItem) Weight() float64 {
 	return float64(ii.Quantity) * ii.Item.Weight
 }
 
-func ActivateEdible(nutrition float64) func(*entity, *World) bool {
-	return func(e *entity, w *World) bool {
+func ActivateEdible(nutrition float64, message string) func(*entity, *World) (bool, string) {
+	return func(e *entity, w *World) (bool, string) {
 		e.player.Eat(nutrition)
-		return true
+		return true, message
 	}
 }
 
-func newItem(id, name, icon, color string, weight, power float64, traits ItemTraits, activate func(*entity, *World) bool) Item {
+func newItem(id, name, icon, color string, weight, power float64, traits ItemTraits, activate func(*entity, *World) (bool, string)) Item {
 	return Item{
 		ID:       id,
 		Name:     name,
@@ -74,7 +81,7 @@ func newItem(id, name, icon, color string, weight, power float64, traits ItemTra
 
 var BareHands = newItem(
 	"bare-hands",
-	"Bare Hands",
+	"bare hands",
 	"  ",
 	"#fff",
 	0.0,
