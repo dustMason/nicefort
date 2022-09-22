@@ -39,6 +39,20 @@ type World struct {
 	lastTick   time.Time
 }
 
+func NewWorld(size int) *World {
+	w := &World{
+		W:        size,
+		H:        size,
+		players:  make(map[string]*entity),
+		wMap:     GenerateOverworld(size),
+		events:   events.NewEventList(100),
+		onEvent:  make(map[string]func(string)),
+		lastTick: time.Now(),
+	}
+	go w.runTicker()
+	return w
+}
+
 // SizeX SizeY IsPassable and OOB to satisfy the dmap interface
 func (w *World) SizeX() int {
 	return w.W
@@ -76,20 +90,6 @@ func addEntity(l location, e *entity) location {
 	ret = append(ret, e)
 	return ret
 
-}
-
-func NewWorld(size int) *World {
-	w := &World{
-		W:        size,
-		H:        size,
-		players:  make(map[string]*entity),
-		wMap:     GenerateOverworld(size),
-		events:   events.NewEventList(100),
-		onEvent:  make(map[string]func(string)),
-		lastTick: time.Now(),
-	}
-	go w.runTicker()
-	return w
 }
 
 func (w *World) tick(t time.Time) {

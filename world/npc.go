@@ -139,7 +139,16 @@ func annoyingCreature(w *World, me *entity) {
 // todo
 // Elk
 // Deer
-// Bears
+// Brown Bears
+// wolf
+// wolverine
+// lynx
+// reindeer
+
+// Salmon, trout, and the much esteemed siika (whitefish) are relatively
+// abundant in the northern rivers. Baltic herring is the most common sea fish,
+// while crayfish can be caught during the brief summer season. Pike, char, and
+// perch are also found.
 
 func NewRabbit(x, y int) *NPC {
 	return newNPC("rabbit", "r ", 0.2, 3, defenselessCreature, x, y)
