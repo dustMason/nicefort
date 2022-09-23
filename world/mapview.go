@@ -9,14 +9,15 @@ import (
 // operations too expensive to perform on the entire map
 type mapView struct {
 	wMap    []location
+	targets []dmap.Point
 	w       int
 	h       int
 	xOffset int
 	yOffset int
 }
 
-func newMapView(w *World, x1, y1, x2, y2 int) mapView {
-	mv := mapView{wMap: make([]location, 0)}
+func newMapView(w *World, targets []dmap.Point, x1, y1, x2, y2 int) mapView {
+	mv := mapView{wMap: make([]location, 0), targets: targets}
 	y1 = util.ClampedInt(y1, 0, w.H)
 	x1 = util.ClampedInt(x1, 0, w.W)
 	iy := y1
@@ -63,20 +64,25 @@ func (mv *mapView) index(x, y int) int {
 }
 
 // todo implement moveTowards = false, ie a HighestNeighbor func on dmap
-func (mv *mapView) dijkstra(x, y int, targets []dmap.Point, moveTowards bool) (int, int) {
+func (mv *mapView) dijkstra(x, y int, moveTowards bool) (int, int) {
 	// all given points must be relative to the smaller slice of the map, and then translated back
 	x, y, _ = mv.offsetPoint(x, y)
 	adjustedOffsets := make([]dmap.Point, 0)
-	for _, t := range targets {
+	for _, t := range mv.targets {
 		xx, yy := t.GetXY()
 		ox, oy, inBounds := mv.offsetPoint(xx, yy)
 		if inBounds {
 			adjustedOffsets = append(adjustedOffsets, Coord{X: ox, Y: oy})
 		}
 	}
-	dMap := dmap.BlankDMap(mv, dmap.ManhattanNeighbours)
+	dMap := dmap.BlankDMap(mv, dmap.DiagonalNeighbours)
 	dMap.Calc(adjustedOffsets...)
-	nextMove := dMap.LowestNeighbour(x, y)
+	var nextMove dmap.WeightedPoint
+	if moveTowards {
+		nextMove = dMap.LowestNeighbour(x, y)
+	} else {
+		nextMove = HighestNeighbor(dMap, x, y)
+	}
 	return nextMove.X + mv.xOffset, nextMove.Y + mv.yOffset
 }
 
@@ -84,4 +90,18 @@ func (mv *mapView) dijkstra(x, y int, targets []dmap.Point, moveTowards bool) (i
 // if the point is off the map, the returned bool will be false
 func (mv *mapView) offsetPoint(x, y int) (int, int, bool) {
 	return x - mv.xOffset, y - mv.yOffset, x-mv.xOffset > 0 && y-mv.yOffset > 0
+}
+
+// todo this doesn't seem to work. NPCs just get stuck in a cycle
+func HighestNeighbor(d *dmap.DijkstraMap, x, y int) dmap.WeightedPoint {
+	vals := dmap.DiagonalNeighbours(d, x, y)
+	var hv dmap.Rank = 0
+	ret := vals[0]
+	for _, val := range vals {
+		if val.Val > hv {
+			hv = val.Val
+			ret = val
+		}
+	}
+	return ret
 }

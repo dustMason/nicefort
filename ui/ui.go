@@ -81,6 +81,10 @@ type keyMap struct {
 	Down           key.Binding
 	Left           key.Binding
 	Right          key.Binding
+	UpLeft         key.Binding
+	UpRight        key.Binding
+	DownLeft       key.Binding
+	DownRight      key.Binding
 	Help           key.Binding
 	FocusChat      key.Binding
 	FocusInventory key.Binding
@@ -104,20 +108,36 @@ func (k keyMap) FullHelp() [][]key.Binding {
 
 var keys = keyMap{
 	Up: key.NewBinding(
-		key.WithKeys("up", "k"),
+		key.WithKeys("up", "k", "w"),
 		key.WithHelp("↑/k", "move up"),
 	),
 	Down: key.NewBinding(
-		key.WithKeys("down", "j"),
+		key.WithKeys("down", "j", "x"),
 		key.WithHelp("↓/j", "move down"),
 	),
 	Left: key.NewBinding(
-		key.WithKeys("left", "h"),
+		key.WithKeys("left", "h", "a"),
 		key.WithHelp("←/h", "move left"),
 	),
 	Right: key.NewBinding(
-		key.WithKeys("right", "l"),
+		key.WithKeys("right", "l", "d"),
 		key.WithHelp("→/l", "move right"),
+	),
+	UpLeft: key.NewBinding(
+		key.WithKeys("q"),
+		key.WithHelp("↖", "move northwest"),
+	),
+	UpRight: key.NewBinding(
+		key.WithKeys("e"),
+		key.WithHelp("↗", "move northeast"),
+	),
+	DownLeft: key.NewBinding(
+		key.WithKeys("z"),
+		key.WithHelp("↙", "move southwest"),
+	),
+	DownRight: key.NewBinding(
+		key.WithKeys("c"),
+		key.WithHelp("↘", "move southeast"),
 	),
 	Help: key.NewBinding(
 		key.WithKeys("?"),
@@ -144,8 +164,8 @@ var keys = keyMap{
 		key.WithKeys("esc"),
 	),
 	Quit: key.NewBinding(
-		key.WithKeys("q", "ctrl+c"),
-		key.WithHelp("q", "quit"),
+		key.WithKeys("ctrl+c"),
+		key.WithHelp("ctrl+c", "quit"),
 	),
 }
 
@@ -211,6 +231,14 @@ func (m UIModel) handleMapModeMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.world.MovePlayer(-1, 0, m.playerID)
 		case key.Matches(msg, m.keys.Right):
 			m.world.MovePlayer(1, 0, m.playerID)
+		case key.Matches(msg, m.keys.UpLeft):
+			m.world.MovePlayer(-1, -1, m.playerID)
+		case key.Matches(msg, m.keys.UpRight):
+			m.world.MovePlayer(1, -1, m.playerID)
+		case key.Matches(msg, m.keys.DownLeft):
+			m.world.MovePlayer(-1, 1, m.playerID)
+		case key.Matches(msg, m.keys.DownRight):
+			m.world.MovePlayer(1, 1, m.playerID)
 		case key.Matches(msg, m.keys.Help):
 			m.help.ShowAll = !m.help.ShowAll
 		case key.Matches(msg, m.keys.Space):

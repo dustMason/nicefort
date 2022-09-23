@@ -85,6 +85,7 @@ func newNPC(name, icon string, speed float64, health int, b behavior, x, y int) 
 		icon:      icon,
 		baseSpeed: speed,
 		health:    health,
+		maxHealth: health,
 		behavior:  b,
 		damagedBy: anyWeapon,
 		loc:       Coord{x, y},
@@ -101,10 +102,12 @@ func anyWeapon(i *Item) (bool, int) {
 
 // normally doesn't care about players. runs away when attacked
 func defenselessCreature(w *World, me *entity) {
-	if me.npc.health < me.npc.maxHealth {
+	if len(me.npc.targets) > 0 {
 		me.npc.mood = terrorized
 		me.npc.speed = me.npc.baseSpeed * 2
-		// todo run away (implement a HighestNeighbor func for dmap?)
+		mv := createMapView(w, me.npc.loc, me.npc.targets)
+		nextX, nextY := mv.dijkstra(me.npc.loc.X, me.npc.loc.Y, false)
+		w.MoveNPC(nextX, nextY, me)
 	} else {
 		me.npc.mood = calm
 		me.npc.speed = me.npc.baseSpeed
@@ -119,16 +122,8 @@ func annoyingCreature(w *World, me *entity) {
 	if len(me.npc.targets) > 0 {
 		me.npc.mood = enraged
 		me.npc.speed = me.npc.baseSpeed * 3
-		x1 := me.npc.loc.X - NPCActivationRadius
-		y1 := me.npc.loc.Y - NPCActivationRadius
-		x2 := me.npc.loc.X + NPCActivationRadius
-		y2 := me.npc.loc.Y + NPCActivationRadius
-		mv := newMapView(w, x1, y1, x2, y2)
-		pt := make([]dmap.Point, 0, len(me.npc.targets))
-		for t, _ := range me.npc.targets {
-			pt = append(pt, t.player.loc)
-		}
-		nextX, nextY := mv.dijkstra(me.npc.loc.X, me.npc.loc.Y, pt, true)
+		mv := createMapView(w, me.npc.loc, me.npc.targets)
+		nextX, nextY := mv.dijkstra(me.npc.loc.X, me.npc.loc.Y, true)
 		w.MoveNPC(nextX, nextY, me)
 		// todo attack the target
 	} else {
@@ -136,6 +131,19 @@ func annoyingCreature(w *World, me *entity) {
 		y := rand.Intn(3) - 1 + me.npc.loc.Y
 		w.MoveNPC(x, y, me)
 	}
+}
+
+func createMapView(w *World, loc Coord, targets map[*entity]struct{}) *mapView {
+	x1 := loc.X - NPCActivationRadius
+	y1 := loc.Y - NPCActivationRadius
+	x2 := loc.X + NPCActivationRadius
+	y2 := loc.Y + NPCActivationRadius
+	pt := make([]dmap.Point, 0, len(targets))
+	for t, _ := range targets {
+		pt = append(pt, t.player.loc)
+	}
+	mv := newMapView(w, pt, x1, y1, x2, y2)
+	return &mv
 }
 
 // todo
@@ -153,7 +161,7 @@ func annoyingCreature(w *World, me *entity) {
 // perch are also found.
 
 func NewRabbit(x, y int) *NPC {
-	return newNPC("rabbit", "r ", 0.2, 3, defenselessCreature, x, y)
+	return newNPC("rabbit", "r ", 0.2, 30, defenselessCreature, x, y)
 }
 
 func NewElephant(x, y int) *NPC {
