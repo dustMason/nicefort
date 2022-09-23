@@ -53,23 +53,6 @@ func NewWorld(size int) *World {
 	return w
 }
 
-// SizeX SizeY IsPassable and OOB to satisfy the dmap interface
-func (w *World) SizeX() int {
-	return w.W
-}
-
-func (w *World) SizeY() int {
-	return w.H
-}
-
-func (w *World) IsPassable(x int, y int) bool {
-	return w.walkable(x, y)
-}
-
-func (w *World) OOB(x int, y int) bool {
-	return !w.InBounds(x, y)
-}
-
 type location []*entity
 
 func removeEntity(l location, e *entity) location {

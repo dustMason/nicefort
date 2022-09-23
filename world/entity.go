@@ -167,6 +167,23 @@ var environmentTiles = map[Environment][]string{
 	// Default:      {"猫"},
 }
 
+// interesting characters
+// ߷
+// લ
+// ૭
+// ଽ
+// ༒ (double?)
+// ༚
+// ༛
+// ༜
+// ტ
+// ᆍ
+// ࿇
+// ⁂
+// ⁕
+// ☀ ☁
+// 𓆏 lots at https://mcdlr.com/utf-8/#77641
+
 func environmentTile(e Environment, variant int) string {
 	if v, ok := environmentTiles[e]; ok {
 		return v[variant%len(v)]

@@ -119,15 +119,17 @@ func annoyingCreature(w *World, me *entity) {
 	if len(me.npc.targets) > 0 {
 		me.npc.mood = enraged
 		me.npc.speed = me.npc.baseSpeed * 3
-		// todo this map should be small - only a 20x20 square around the NPC. this is slow!
-		dMap := dmap.BlankDMap(w, dmap.ManhattanNeighbours)
+		x1 := me.npc.loc.X - NPCActivationRadius
+		y1 := me.npc.loc.Y - NPCActivationRadius
+		x2 := me.npc.loc.X + NPCActivationRadius
+		y2 := me.npc.loc.Y + NPCActivationRadius
+		mv := newMapView(w, x1, y1, x2, y2)
 		pt := make([]dmap.Point, 0, len(me.npc.targets))
 		for t, _ := range me.npc.targets {
 			pt = append(pt, t.player.loc)
 		}
-		dMap.Calc(pt...)
-		nextMove := dMap.LowestNeighbour(me.npc.loc.X, me.npc.loc.Y)
-		w.MoveNPC(nextMove.X, nextMove.Y, me)
+		nextX, nextY := mv.dijkstra(me.npc.loc.X, me.npc.loc.Y, pt, true)
+		w.MoveNPC(nextX, nextY, me)
 		// todo attack the target
 	} else {
 		x := rand.Intn(3) - 1 + me.npc.loc.X

@@ -23,6 +23,8 @@ func GenerateOverworld(size int) []location {
 	for i, z := range heights {
 		r := rand.Intn(1000)
 		v := r / 100
+		// x := i % size
+		// y := i / size
 		var loc location
 		if z < water {
 			loc = location{{environment: Water, variant: v}}
@@ -49,6 +51,9 @@ func GenerateOverworld(size int) []location {
 				loc = append(loc, &entity{flora: GoatWillow()})
 			} else if r < 200 {
 				loc = append(loc, &entity{flora: BirdCherry()})
+			} else if r < 400 {
+				// testing:
+				// loc = append(loc, &entity{npc: NewElephant(x, y)})
 			}
 			// todo rare arctic fox
 			stats["birch forest"] += 1
