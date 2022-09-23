@@ -6,6 +6,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dustmason/nicefort/events"
 	"github.com/dustmason/nicefort/util"
+	"github.com/kelindar/tile"
 	"math/rand"
 	"strconv"
 	"strings"
@@ -29,9 +30,16 @@ func (c Coord) GetXY() (int, int) {
 
 type World struct {
 	sync.RWMutex
-	W, H       int
-	wMap       []location         // the actual map of tiles
-	players    map[string]*entity // map of player id => entity that points to that player
+	W, H int
+	grid *tile.Grid
+	// wMap       []location         // the actual map of tiles
+
+	players *util.TombstoneList[*entity]
+	npcs    *util.TombstoneList[*entity]
+	items   *util.TombstoneList[*entity]
+	flora   *util.TombstoneList[*entity]
+
+	playerMap  map[string]*entity // map of player id => entity that points to that player
 	activeNPCs []*entity
 	events     *events.EventList
 	onEvent    map[string]func(string) // map of player id => chat callback
@@ -40,20 +48,28 @@ type World struct {
 }
 
 func NewWorld(size int) *World {
+	g := tile.NewGrid(int16(size), int16(size))
+	npcs, items, flora := GenerateOverworld(g)
 	w := &World{
-		W:        size,
-		H:        size,
-		players:  make(map[string]*entity),
-		wMap:     GenerateOverworld(size),
-		events:   events.NewEventList(100),
-		onEvent:  make(map[string]func(string)),
-		lastTick: time.Now(),
+		W: size,
+		H: size,
+
+		grid:    g,
+		players: util.NewTombstoneList[*entity](15),
+		npcs:    util.NewTombstoneList[*entity](255, npcs...),
+		items:   util.NewTombstoneList[*entity](65535, items...),
+		flora:   util.NewTombstoneList[*entity](65535, flora...),
+
+		playerMap: make(map[string]*entity),
+		events:    events.NewEventList(100),
+		onEvent:   make(map[string]func(string)),
+		lastTick:  time.Now(),
 	}
 	go w.runTicker()
 	return w
 }
 
-// SizeX SizeY IsPassable and OOB to satisfy the dmap interface
+// SizeX SizeY IsPassable and OOB satisfy the dmap interface
 func (w *World) SizeX() int {
 	return w.W
 }
@@ -70,35 +86,13 @@ func (w *World) OOB(x int, y int) bool {
 	return !w.InBounds(x, y)
 }
 
-type location []*entity
-
-func removeEntity(l location, e *entity) location {
-	ret := make(location, 0)
-	for _, ent := range l {
-		if ent != e {
-			ret = append(ret, ent)
-		}
-	}
-	return ret
-}
-
-func addEntity(l location, e *entity) location {
-	ret := make(location, 0)
-	for _, ent := range l {
-		ret = append(ret, ent)
-	}
-	ret = append(ret, e)
-	return ret
-
-}
-
 func (w *World) tick(t time.Time) {
 	w.days += t.Sub(w.lastTick).Seconds() / secondsPerDay
 	w.lastTick = t
 	for _, e := range w.activeNPCs {
 		e.npc.Tick(t, w, e)
 	}
-	for _, e := range w.players {
+	for _, e := range w.playerMap {
 		e.player.Tick(t)
 	}
 }
@@ -121,19 +115,17 @@ func (w *World) MovePlayer(dx, dy int, playerID string) {
 	}
 	w.Lock()
 	defer w.Unlock()
-	newIndex := w.index(nx, ny)
 	if w.InBounds(nx, ny) {
 		if ent, ok := w.attackable(nx, ny); ok {
 			damage, success, dead, drops := ent.npc.Attacked(e.player.wielding, e, 10)
 			// todo need a progress calc to use Activity
 			if dead {
 				e.player.Event(events.Success, fmt.Sprintf("You killed the %s", ent.npc.Name))
-				i := w.index(nx, ny)
-				w.wMap[i] = removeEntity(w.wMap[i], ent)
+				w.removeNPC(nx, ny)
 				for _, drop := range drops {
 					e.player.Event(events.Success, fmt.Sprintf("It dropped %d x %s", drop.Quantity, drop.Item.Name))
-					ni, _ := w.findNearbyAvailableIndex(nx, ny)
-					w.wMap[ni] = addEntity(w.wMap[ni], &entity{item: drop.Item, quantity: drop.Quantity})
+					x, y, _ := w.findNearbyAvailableIndex(nx, ny)
+					w.addItem(x, y, drop.Item, drop.Quantity)
 				}
 			} else if !success {
 				e.player.Event(events.Warning, fmt.Sprintf("Your %s doesn't do anything to the %s", e.player.wielding.Name, ent.npc.Name))
@@ -144,9 +136,7 @@ func (w *World) MovePlayer(dx, dy int, playerID string) {
 		}
 		if w.walkable(nx, ny) && !w.occupied(nx, ny) {
 			oldX, oldY := e.player.GetLocation()
-			oldIndex := w.index(oldX, oldY)
-			w.wMap[newIndex] = append(w.wMap[newIndex], e)
-			w.wMap[oldIndex] = removeEntity(w.wMap[oldIndex], e)
+			w.swapPlayer(oldX, oldY, nx, ny, e)
 			e.player.SetLocation(nx, ny, now)
 			e.player.See(w)
 			w.refreshActiveNPCs()
@@ -166,7 +156,6 @@ func (w *World) InteractPlayer(playerID string) {
 		return
 	}
 	x, y := e.player.GetLocation()
-	index := w.index(x, y)
 	w.Lock()
 	defer w.Unlock()
 	if ent, ok := w.harvestable(x, y); ok {
@@ -177,7 +166,7 @@ func (w *World) InteractPlayer(playerID string) {
 		took := e.player.PickUp(ee.item, ee.quantity)
 		ee.quantity -= took
 		if ee.quantity == 0 {
-			w.wMap[index] = removeEntity(w.wMap[index], ee)
+			w.removeItem(x, y)
 		}
 		return
 	}
@@ -188,13 +177,12 @@ func (w *World) harvest(player *player, ent *entity, x, y int) {
 	player.SetActivity(Activity{description: ent.flora.name, progress: progress})
 	for _, drop := range drops {
 		player.Event(events.Success, fmt.Sprintf("It yielded %d x %s", drop.Quantity, drop.Item.Name))
-		i, _ := w.findNearbyAvailableIndex(x, y)
-		w.wMap[i] = addEntity(w.wMap[i], &entity{item: drop.Item, quantity: drop.Quantity})
+		nx, ny, _ := w.findNearbyAvailableIndex(x, y)
+		w.addItem(nx, ny, drop.Item, drop.Quantity)
 	}
 	if dead {
 		player.Event(events.Success, fmt.Sprintf("You harvested the %s", ent.flora.name))
-		i := w.index(x, y)
-		w.wMap[i] = removeEntity(w.wMap[i], ent)
+		w.removeFlora(x, y, ent)
 	} else if !success {
 		// handle the case where the ent is exhausted. "you can't harvest any more with your x"
 		player.Event(events.Warning, fmt.Sprintf("Your %s does not work here", player.wielding.Name))
@@ -208,10 +196,7 @@ func (w *World) MoveNPC(x, y int, e *entity) {
 	w.Lock()
 	defer w.Unlock()
 	if w.InBounds(x, y) && w.walkable(x, y) && !w.occupied(x, y) { // todo some NPCs can move over different types of terrain
-		newIndex := w.index(x, y)
-		oldIndex := w.index(e.npc.loc.X, e.npc.loc.Y)
-		w.wMap[newIndex] = append(w.wMap[newIndex], e)
-		w.wMap[oldIndex] = removeEntity(w.wMap[oldIndex], e)
+		w.swapNPC(e.npc.loc.X, e.npc.loc.Y, x, y, e)
 		e.npc.loc = Coord{x, y}
 	}
 }
@@ -276,49 +261,82 @@ func (w *World) RenderMap(playerID, playerName string, vw, vh int) string {
 	right := x + vw/2
 	top := y - vh/2
 	bottom := y + vh/2
-	ix := left
-	iy := top
-	for iy < bottom {
-		for ix < right {
-			var ent *entity
-			if !w.InBounds(ix, iy) {
-				b.WriteString(blackSpace)
-			} else {
-				ic := Coord{ix, iy}
-				inView, dist := ply.CanSee(ix, iy)
-				memString, inPastView := seen[ic]
-				if inPastView && !inView {
-					b.WriteString(memString)
-				} else if inView {
-					loc := w.location(ix, iy)
-					ent = loc[len(loc)-1]
-					bg := loc[0]
-					b.WriteString(
-						lipgloss.NewStyle().
-							Foreground(lipgloss.Color(ent.ForegroundColor(dist))).
-							Background(lipgloss.Color(bg.BackgroundColor(dist))).
-							Render(ent.String()),
-					)
-				} else { // not in past or current view
-					b.WriteString(blackSpace)
+
+	// get all the tiles within the viewport
+	w.grid.Within(
+		tile.Point{X: int16(left), Y: int16(top)},
+		tile.Point{X: int16(right), Y: int16(bottom)},
+		func(pt tile.Point, tile tile.Tile) {
+			inView, dist := ply.CanSee(int(pt.X), int(pt.Y))
+			memString, inPastView := seen[ic]
+			if inPastView && !inView {
+				b.WriteString(memString)
+			} else if inView {
+				// grab the tile from the grid
+				var ent *entity
+				ents, biome := w.allEntitiesAndBiomeAt(ix, iy)
+				if len(ents) > 0 {
+					fmt.Println("inview", biome, ents)
+					ent = ents[0]
+				} else {
+					ent = &entity{environment: Grass}
 				}
+				// fmt.Println("render", ix, iy, ent, biome)
+				bg := entityFromBiome(biome)
+				b.WriteString(
+					lipgloss.NewStyle().
+						Foreground(lipgloss.Color(ent.ForegroundColor(dist))).
+						Background(lipgloss.Color(bg.BackgroundColor(dist))).
+						Render(ent.String()),
+				)
+			} else { // not in past or current fovView
+				b.WriteString(blackSpace)
 			}
-			ix++
-		}
-		ix = left
-		b.WriteString("\n")
-		iy++
-	}
+			if int(pt.X) == right {
+				b.WriteString("\n")
+			}
+
+		},
+	)
+
+	// 		// var ent *entity
+	// 		// 	ic := Coord{ix, iy}
+	// 		}
+	// 		ix++
+	// 	}
+	// 	ix = left
+	// 	b.WriteString("\n")
+	// 	iy++
+	// }
 	return b.String()
 }
 
+func entityFromBiome(b Biome) *entity {
+	switch b {
+	case Ocean, River:
+		return &entity{environment: Water}
+	case Bog:
+		return &entity{environment: Mud}
+	case BirchForest, Boreal:
+		return &entity{environment: Grass}
+	case Rocky:
+		return &entity{environment: Pebbles}
+	case Mountainous, Glacial:
+		return &entity{environment: Rock}
+	default:
+		return &entity{environment: Grass}
+	}
+}
+
 func (w *World) RenderForMemory(x, y int) string {
-	loc := w.location(x, y)
-	// iterate backwards to get topmost memorable entity first
-	for i := len(loc) - 1; i >= 0; i-- {
-		if loc[i].Memorable() {
-			return memStyle.Render(loc[i].String())
+	if t, ok := w.grid.At(int16(x), int16(y)); ok {
+		_, b, _, i, f := w.tileToEntities(t)
+		if f != nil {
+			return f.String()
+		} else if i != nil {
+			return i.String()
 		}
+		return entityFromBiome(b).String()
 	}
 	return blackSpace
 }
@@ -341,7 +359,7 @@ func (w *World) RenderPlayerSidebar(id string, name string) string {
 		b.WriteString(fmt.Sprintf("%s\n%s\n", a.description, a.pBar.ViewAs(a.progress)))
 	}
 
-	for _, ee := range w.players {
+	for _, ee := range w.playerMap {
 		if ee == e {
 			continue
 		}
@@ -378,18 +396,17 @@ func (w *World) RenderWorldStatus() string {
 func (w *World) getOrCreatePlayer(playerID, playerName string) *entity {
 	w.Lock()
 	defer w.Unlock()
-	e, ok := w.players[playerID]
+	e, ok := w.playerMap[playerID]
 	if !ok {
 		x, y, _ := w.randomAvailableCoord()
-		e = NewPlayer(playerID, Coord{x, y})
-		w.players[playerID] = e
+		e = NewPlayer(playerID, Coord{x, y}, w.grid)
+		w.playerMap[playerID] = e
 	}
 	e.player.name = playerName
 	x, y := e.player.GetLocation()
 	if !w.isPlayerAtLocation(e, x, y) {
 		// ensure that a `wMap` entry exists. (this might be a reconnecting player)
-		i := w.index(x, y)
-		w.wMap[i] = append(w.wMap[i], e)
+		w.addPlayer(x, y, e)
 		e.player.See(w)
 		w.refreshActiveNPCs()
 	}
@@ -400,26 +417,18 @@ func (w *World) refreshActiveNPCs() {
 	// from each player, grab all NPCs within a boundary and make sure they are all in activeNPCs
 	// set any remaining to inactive
 	found := make(map[*entity]struct{})
-	for _, e := range w.players {
+	for _, e := range w.playerMap {
 		px, py := e.player.GetLocation()
 		x1 := util.ClampedInt(px-NPCActivationRadius, 0, w.W-1)
 		y1 := util.ClampedInt(py-NPCActivationRadius, 0, w.H-1)
 		x2 := util.ClampedInt(px+NPCActivationRadius, 0, w.W-1)
 		y2 := util.ClampedInt(py+NPCActivationRadius, 0, w.H-1)
-		ix := x1
-		iy := y1
-		for iy < y2 {
-			for ix < x2 {
-				for _, ent := range w.location(ix, iy) {
-					if ent.npc != nil {
-						found[ent] = struct{}{}
-					}
-				}
-				ix++
+		w.grid.Within(tile.Point{X: int16(x1), Y: int16(y1)}, tile.Point{X: int16(x2), Y: int16(y2)}, func(point tile.Point, t tile.Tile) {
+			_, _, n, _, _ := w.tileToEntities(t)
+			if n != nil {
+				found[n] = struct{}{}
 			}
-			ix = x1
-			iy++
-		}
+		})
 	}
 	newActiveNPCs := make([]*entity, 0)
 	for e := range found {
@@ -431,15 +440,14 @@ func (w *World) refreshActiveNPCs() {
 func (w *World) getPlayer(playerID string) *entity {
 	w.Lock()
 	defer w.Unlock()
-	e, _ := w.players[playerID]
+	e, _ := w.playerMap[playerID]
 	return e
 }
 
 func (w *World) isPlayerAtLocation(e *entity, x, y int) bool {
-	for _, ent := range w.location(x, y) {
-		if ent == e {
-			return true
-		}
+	if t, ok := w.grid.At(int16(x), int16(y)); ok {
+		p, _, _, _, _ := w.tileToEntities(t)
+		return p == e
 	}
 	return false
 }
@@ -462,7 +470,8 @@ func (w *World) InBounds(x, y int) bool {
 }
 
 func (w *World) IsOpaque(x, y int) bool {
-	for _, e := range w.location(x, y) {
+	ents, _ := w.allEntitiesAndBiomeAt(x, y)
+	for _, e := range ents {
 		if !e.SeeThrough() {
 			return true
 		}
@@ -471,7 +480,8 @@ func (w *World) IsOpaque(x, y int) bool {
 }
 
 func (w *World) walkable(x, y int) bool {
-	for _, e := range w.location(x, y) {
+	ents, _ := w.allEntitiesAndBiomeAt(x, y)
+	for _, e := range ents {
 		if !e.Walkable() {
 			return false
 		}
@@ -479,8 +489,10 @@ func (w *World) walkable(x, y int) bool {
 	return true
 }
 
+// todo this should consider a tile with an item as occupied
 func (w *World) occupied(x, y int) bool {
-	for _, e := range w.location(x, y) {
+	ents, _ := w.allEntitiesAndBiomeAt(x, y)
+	for _, e := range ents {
 		if e.Occupied() {
 			return true
 		}
@@ -489,7 +501,8 @@ func (w *World) occupied(x, y int) bool {
 }
 
 func (w *World) pickupable(x, y int) (*entity, bool) {
-	for _, e := range w.location(x, y) {
+	ents, _ := w.allEntitiesAndBiomeAt(x, y)
+	for _, e := range ents {
 		if e.Pickupable() {
 			return e, true
 		}
@@ -498,7 +511,8 @@ func (w *World) pickupable(x, y int) (*entity, bool) {
 }
 
 func (w *World) attackable(x int, y int) (*entity, bool) {
-	for _, e := range w.location(x, y) {
+	ents, _ := w.allEntitiesAndBiomeAt(x, y)
+	for _, e := range ents {
 		if e.Attackable() {
 			return e, true
 		}
@@ -507,7 +521,8 @@ func (w *World) attackable(x int, y int) (*entity, bool) {
 }
 
 func (w *World) harvestable(x int, y int) (*entity, bool) {
-	for _, e := range w.location(x, y) {
+	ents, _ := w.allEntitiesAndBiomeAt(x, y)
+	for _, e := range ents {
 		if e.Harvestable() {
 			return e, true
 		}
@@ -517,10 +532,6 @@ func (w *World) harvestable(x int, y int) (*entity, bool) {
 
 func (w *World) index(x, y int) int {
 	return y*w.W + x
-}
-
-func (w *World) location(x, y int) location {
-	return w.wMap[w.index(x, y)]
 }
 
 func (w *World) coordinates(i int) (int, int) {
@@ -553,8 +564,7 @@ func (w *World) disconnectPlayer(e *entity) {
 	w.Lock()
 	defer w.Unlock()
 	x, y := e.player.GetLocation()
-	i := w.index(x, y)
-	w.wMap[i] = removeEntity(w.wMap[i], e)
+	w.removePlayer(x, y, e)
 }
 
 func (w *World) neighbors(x, y int) []Coord {
@@ -567,7 +577,7 @@ func (w *World) neighbors(x, y int) []Coord {
 }
 
 // findNearbyAvailableIndex does a simple BFS to find an empty location
-func (w *World) findNearbyAvailableIndex(x int, y int) (int, error) {
+func (w *World) findNearbyAvailableIndex(x int, y int) (int, int, error) {
 	seen := map[Coord]struct{}{}
 	stack := w.neighbors(x, y)
 	for len(stack) > 0 {
@@ -577,7 +587,7 @@ func (w *World) findNearbyAvailableIndex(x int, y int) (int, error) {
 			continue
 		}
 		if !w.occupied(c.X, c.Y) && w.walkable(c.X, c.Y) {
-			return w.index(c.X, c.Y), nil
+			return c.X, c.Y, nil
 		}
 		_, ok := seen[c]
 		if ok {
@@ -586,7 +596,141 @@ func (w *World) findNearbyAvailableIndex(x int, y int) (int, error) {
 		seen[c] = struct{}{}
 		stack = append(stack, w.neighbors(c.X, c.Y)...)
 	}
-	return 0, errors.New("could not find an available coordinate")
+	return 0, 0, errors.New("could not find an available coordinate")
+}
+
+func (w *World) removeNPC(x int, y int) {
+	if t, ok := w.grid.At(int16(x), int16(y)); ok {
+		p, b, oldIndex, i, f := tileToIndexes(t)
+		t = indexesToTile(p, b, 0, i, f)
+		w.grid.WriteAt(int16(x), int16(y), t)
+		w.npcs.Remove(int(oldIndex))
+	}
+}
+
+func (w *World) addItem(x int, y int, item *Item, quantity int) {
+	// todo this ignored error means the world is full of items! handle it
+	i, _ := w.items.Append(&entity{item: item, quantity: quantity})
+	if t, ok := w.grid.At(int16(x), int16(y)); ok {
+		p, b, n, _, f := tileToIndexes(t)
+		t = indexesToTile(p, b, n, uint16(i), f)
+		w.grid.WriteAt(int16(x), int16(y), t)
+	}
+}
+
+func (w *World) removeItem(x int, y int) {
+	if t, ok := w.grid.At(int16(x), int16(y)); ok {
+		p, b, n, oldIndex, f := tileToIndexes(t)
+		t = indexesToTile(p, b, n, 0, f)
+		w.grid.WriteAt(int16(x), int16(y), t)
+		w.items.Remove(int(oldIndex))
+	}
+}
+
+func (w *World) swapPlayer(px int, py int, nx int, ny int, e *entity) {
+	var playerIndex uint8
+	// remove player from old spot
+	if t, ok := w.grid.At(int16(px), int16(py)); ok {
+		pi, b, n, i, f := tileToIndexes(t)
+		fmt.Println("got indexes", pi, b, n, i, f)
+		playerIndex = pi
+		t = indexesToTile(0, b, n, i, f)
+		fmt.Println("write tile", t)
+		w.grid.WriteAt(int16(px), int16(py), t)
+	}
+	// set player at new location
+	if t, ok := w.grid.At(int16(nx), int16(ny)); ok {
+		_, b, n, i, f := tileToIndexes(t)
+		t = indexesToTile(playerIndex, b, n, i, f)
+		w.grid.WriteAt(int16(px), int16(py), t)
+	}
+}
+
+func (w *World) swapNPC(px int, py int, nx int, ny int, e *entity) {
+	var npcIndex uint8
+	// remove npc from old spot
+	if t, ok := w.grid.At(int16(px), int16(py)); ok {
+		p, b, ni, i, f := tileToIndexes(t)
+		npcIndex = ni
+		t = indexesToTile(p, b, 0, i, f)
+		w.grid.WriteAt(int16(px), int16(py), t)
+	}
+	// set npc at new location
+	if t, ok := w.grid.At(int16(nx), int16(ny)); ok {
+		p, b, _, i, f := tileToIndexes(t)
+		t = indexesToTile(p, b, npcIndex, i, f)
+		w.grid.WriteAt(int16(px), int16(py), t)
+	}
+}
+
+func (w *World) removeFlora(x int, y int, ent *entity) {
+	if t, ok := w.grid.At(int16(x), int16(y)); ok {
+		p, b, n, i, oldIndex := tileToIndexes(t)
+		t = indexesToTile(p, b, n, i, 0)
+		w.grid.WriteAt(int16(x), int16(y), t)
+		w.flora.Remove(int(oldIndex))
+	}
+}
+
+func (w *World) removePlayer(x int, y int, ent *entity) {
+	if t, ok := w.grid.At(int16(x), int16(y)); ok {
+		oldIndex, b, n, i, f := tileToIndexes(t)
+		t = indexesToTile(0, b, n, i, f)
+		w.grid.WriteAt(int16(x), int16(y), t)
+		w.players.Remove(int(oldIndex))
+	}
+}
+
+func (w *World) tileToEntities(t tile.Tile) (*entity, Biome, *entity, *entity, *entity) {
+	p, b, n, i, f := tileToIndexes(t)
+	var ply *entity
+	var npc *entity
+	var item *entity
+	var flora *entity
+	if p > 0 {
+		ply = w.players.Get(int(p))
+	}
+	if n > 0 {
+		npc = w.npcs.Get(int(n))
+	}
+	if i > 0 {
+		item = w.items.Get(int(i))
+	}
+	if f > 0 {
+		flora = w.flora.Get(int(f))
+	}
+	return ply, Biome(b), npc, item, flora
+}
+
+func (w *World) allEntitiesFromTile(t tile.Tile) []*entity {
+	p, _, n, i, f := w.tileToEntities(t)
+	return []*entity{p, n, i, f}
+}
+
+func (w *World) allEntitiesAndBiomeAt(x, y int) ([]*entity, Biome) {
+	var out []*entity
+	var biome Biome
+	if t, ok := w.grid.At(int16(x), int16(y)); ok {
+		_, b, _, _, _ := tileToIndexes(t)
+		biome = Biome(b)
+		ents := w.allEntitiesFromTile(t)
+		for _, ent := range ents {
+			if ent != nil {
+				out = append(out, ent)
+			}
+		}
+	}
+	return out, biome
+}
+
+func (w *World) addPlayer(x int, y int, e *entity) {
+	// todo this ignored error means the world has too many players! handle it
+	playerIndex, _ := w.players.Append(e)
+	if t, ok := w.grid.At(int16(x), int16(y)); ok {
+		_, b, n, i, f := tileToIndexes(t)
+		t = indexesToTile(uint8(playerIndex), b, n, i, f)
+		w.grid.WriteAt(int16(x), int16(y), t)
+	}
 }
 
 // compassIndicator returns a string like "↖ 30"

@@ -82,8 +82,6 @@ func (e entity) baseColor() colorful.Color {
 		return clr(e.flora.color)
 	}
 	switch e.environment {
-	case Floor:
-		return clr("#444444")
 	case Water:
 		h1 := "#46468C"
 		h2 := "#504EA6"
@@ -130,11 +128,6 @@ const Unknown = "? "
 const (
 	None Environment = iota // signifies that this is not an environment
 	WallBlock
-	WallCornerNE
-	WallCornerSE
-	WallCornerSW
-	WallCornerNW
-	Floor
 	Space
 	Water
 	Mud
@@ -152,17 +145,12 @@ const (
 // Dwarf Willow (#1F3017) at 0-1500m in tundra and rock moorland
 
 var environmentTiles = map[Environment][]string{
-	WallCornerNE: {"◣ "},
-	WallCornerSE: {"◤ "},
-	WallCornerSW: {"◥ "},
-	WallCornerNW: {"◢ "},
-	Floor:        {".."},
-	Space:        {"  "},
-	Water:        {"≈≈"},
-	Mud:          {",'", "',"},
-	Grass:        {"''", "\"'"},
-	Rock:         {"姅", "艫", "蠨"},
-	Pebbles:      {"፨፨"},
+	Space:   {"  "},
+	Water:   {"≈≈"},
+	Mud:     {",'", "',"},
+	Grass:   {"''", "\"'"},
+	Rock:    {"姅", "艫", "蠨"},
+	Pebbles: {"፨፨"},
 	// Tree:         {"个", "丫"},
 	// Default:      {"猫"},
 }

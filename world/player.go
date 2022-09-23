@@ -5,6 +5,7 @@ import (
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/dustmason/nicefort/events"
 	"github.com/dustmason/nicefort/fov"
+	"github.com/kelindar/tile"
 	"math"
 	"sync"
 	"time"
@@ -23,8 +24,9 @@ type player struct {
 	id              string // the ssh pubkey of the connected player
 	name            string
 	loc             Coord
-	mapMem          map[Coord]string // map of what player knows on current world
-	view            *fov.View
+	mapMem          map[Coord]string // map of what player knows on current world todo use kelindar/tile here instead?
+	mapView         *mapView
+	fovView         *fov.View
 	inventoryMap    map[string]*InventoryItem // map of item id => inventoryItem
 	inventory       []*InventoryItem
 	moveSpeed       float64 // 0 < n < 1.0
@@ -59,12 +61,17 @@ func (p *player) Attackable() bool {
 	return false
 }
 
-func NewPlayer(id string, c Coord) *entity {
+func NewPlayer(id string, c Coord, grid *tile.Grid) *entity {
+	// start with a default rect based on `c`
 	p := &player{
-		id:           id,
-		loc:          c,
-		mapMem:       make(map[Coord]string),
-		view:         fov.New(),
+		id:      id,
+		loc:     c,
+		mapMem:  make(map[Coord]string),
+		fovView: fov.New(),
+		mapView: &mapView{grid.View(tile.Rect{
+			Min: tile.Point{X: int16(c.X) - 1, Y: int16(c.Y) - 1},
+			Max: tile.Point{X: int16(c.X) + 1, Y: int16(c.Y) + 1},
+		}, nil)},
 		inventoryMap: make(map[string]*InventoryItem),
 		inventory:    make([]*InventoryItem, 0),
 		maxCarry:     50.,
@@ -80,6 +87,8 @@ func NewPlayer(id string, c Coord) *entity {
 		// wielding: &SharpRock,
 	}
 
+	// todo need to poll for updates on the mapView
+
 	return &entity{player: p}
 }
 
@@ -93,8 +102,8 @@ func (p *player) Tick(t time.Time) {
 func (p *player) See(w *World) {
 	p.Lock()
 	defer p.Unlock()
-	p.view.Compute(w, p.loc.X, p.loc.Y, 10)
-	for point, _ := range p.view.Visible {
+	p.fovView.Compute(p.mapView, p.loc.X, p.loc.Y, 10)
+	for point, _ := range p.fovView.Visible {
 		p.mapMem[Coord{point.X, point.Y}] = w.RenderForMemory(point.X, point.Y)
 	}
 }
@@ -102,7 +111,7 @@ func (p *player) See(w *World) {
 func (p *player) CanSee(x, y int) (bool, float64) {
 	p.RLock()
 	defer p.RUnlock()
-	return p.view.IsVisible(x, y)
+	return p.fovView.IsVisible(x, y)
 }
 
 func (p *player) CanMove(now time.Time) bool {

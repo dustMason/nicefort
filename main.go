@@ -6,7 +6,7 @@ import (
 )
 
 func main() {
-	w := world.NewWorld(1000)
+	w := world.NewWorld(500)
 	s := server.NewServer(w)
 	s.Listen()
 }

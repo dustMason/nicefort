@@ -99,7 +99,7 @@ func anyWeapon(i *Item) (bool, int) {
 	return false, 0
 }
 
-// normally doesn't care about players. runs away when attacked
+// normally doesn't care about playerMap. runs away when attacked
 func defenselessCreature(w *World, me *entity) {
 	if me.npc.health < me.npc.maxHealth {
 		me.npc.mood = terrorized
@@ -114,7 +114,7 @@ func defenselessCreature(w *World, me *entity) {
 	}
 }
 
-// normally doesn't care about players. fights back when attacked
+// normally doesn't care about playerMap. fights back when attacked
 func annoyingCreature(w *World, me *entity) {
 	if len(me.npc.targets) > 0 {
 		me.npc.mood = enraged
