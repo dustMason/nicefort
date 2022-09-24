@@ -25,6 +25,8 @@ ssh -p 23234 jordan@127.0.0.1
 ```
 
 ### TODO
+- bugs
+  - compass indicators show all active npcs, not just the ones you can see. should be only visible ones
 - worldgen
   - seasonal spawning of NPCs
     - always off-screen (not near player)

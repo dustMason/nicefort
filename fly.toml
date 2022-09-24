@@ -30,3 +30,11 @@ processes = []
     interval = "15s"
     restart_limit = 0
     timeout = "2s"
+
+[[services]]
+  internal_port = 6060
+  processes = ["app"]
+  protocol = "tcp"
+
+  [[services.ports]]
+    port = 6060

@@ -323,7 +323,7 @@ func (w *World) RenderPlayerSidebar(id string, name string) string {
 
 	a := e.player.GetActivity()
 	if a.description != "" {
-		b.WriteString(fmt.Sprintf("%s\n%s\n", a.description, a.pBar.ViewAs(a.progress)))
+		b.WriteString(fmt.Sprintf("%s\n%s\n\n", a.description, a.pBar.ViewAs(a.progress)))
 	}
 
 	w.withSortedPlayers(func(ee *entity) {
@@ -544,10 +544,10 @@ func (w *World) disconnectPlayer(e *entity) {
 
 func (w *World) neighbors(x, y int) []Coord {
 	return []Coord{
-		Coord{x + 1, y},
-		Coord{x - 1, y},
-		Coord{x, y - 1},
-		Coord{x, y + 1},
+		{x + 1, y},
+		{x - 1, y},
+		{x, y - 1},
+		{x, y + 1},
 	}
 }
 
