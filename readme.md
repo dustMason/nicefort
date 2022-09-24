@@ -34,6 +34,7 @@ ssh -p 23234 jordan@127.0.0.1
     - [x] game support
     - list of actual items
   - [x] eating / hunger
+  - clay (digging mud near water)
   - carrying water
     - tight basket
     - clay pot
@@ -63,7 +64,7 @@ ssh -p 23234 jordan@127.0.0.1
     - bone fishing hook
   - debouncing system for fighting
 - ui
-  - fix layout bug with inventory table and make it look consistent
+  - [x] fix layout bug with inventory table and make it look consistent
   - [x] `space` to pick up entity player is standing on instead of moving towards
   - mouse support
   - render event types with color/style

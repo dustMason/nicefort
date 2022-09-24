@@ -7,7 +7,10 @@ const (
 	Digger
 	Axe
 	Knife
+	Kindling
+	Fuel
 	Edible
+	Stick
 )
 
 type Item struct {
@@ -15,11 +18,12 @@ type Item struct {
 	Name        string
 	Description string
 	Weight      float64
-	activate    func(*entity, *World) (bool, string) // accepts the player and world, returns true if the item is consumed, along with a message
+	activate    func(*Item, *entity, *World) (bool, string) // accepts the player and world, returns true if the item is consumed, along with a message
 	icon        string
 	color       string
 	traits      ItemTraits
 	power       float64 // 0 < n < 1
+	nonPortable bool    // when it appears, immediately drop in closest avail location. can't pick up
 }
 
 func (i Item) String() string {
@@ -47,7 +51,7 @@ func (i Item) Activate(e *entity, w *World) (bool, string) {
 	if i.activate == nil {
 		return false, ""
 	}
-	return i.activate(e, w)
+	return i.activate(&i, e, w)
 }
 
 type InventoryItem struct {
@@ -59,23 +63,30 @@ func (ii InventoryItem) Weight() float64 {
 	return float64(ii.Quantity) * ii.Item.Weight
 }
 
-func ActivateEdible(nutrition float64, message string) func(*entity, *World) (bool, string) {
-	return func(e *entity, w *World) (bool, string) {
+func ActivateEdible(nutrition float64, message string) func(*Item, *entity, *World) (bool, string) {
+	return func(i *Item, e *entity, w *World) (bool, string) {
 		e.player.Eat(nutrition)
 		return true, message
 	}
 }
 
-func newItem(id, name, icon, color string, weight, power float64, traits ItemTraits, activate func(*entity, *World) (bool, string)) Item {
-	return Item{
-		ID:       id,
-		Name:     name,
-		Weight:   weight,
-		icon:     icon,
-		color:    color,
-		traits:   traits,
-		power:    power,
-		activate: activate,
+func newItem(
+	id, name, icon, color string,
+	weight, power float64,
+	traits ItemTraits,
+	nonPortable bool,
+	activate func(*Item, *entity, *World) (bool, string),
+) *Item {
+	return &Item{
+		ID:          id,
+		Name:        name,
+		Weight:      weight,
+		icon:        icon,
+		color:       color,
+		traits:      traits,
+		power:       power,
+		activate:    activate,
+		nonPortable: nonPortable,
 	}
 }
 
@@ -87,7 +98,64 @@ var BareHands = newItem(
 	0.0,
 	0.01,
 	Weapon|Digger,
+	false,
 	nil,
 )
-
-var SharpRock = newItem("sharp-rock", "Sharp Rock", "d ", "#444", 0.05, 0.02, Knife, nil)
+var SharpRock = newItem(
+	"sharp-rock",
+	"sharp rock",
+	"r ",
+	"#444",
+	0.05,
+	0.02,
+	Knife,
+	false,
+	func(i *Item, e *entity, w *World) (bool, string) {
+		e.player.wielding = i
+		return false, "You are now wielding a sharp rock"
+	},
+)
+var DriedLeaves = newItem(
+	"dried-leaves",
+	"dried leaves",
+	"d ",
+	"#444",
+	0.05,
+	0.02,
+	Kindling,
+	false,
+	nil,
+)
+var Twine = newItem(
+	"twine",
+	"twine",
+	"t ",
+	"#444",
+	0.05,
+	0.02,
+	0,
+	false,
+	nil,
+)
+var FireStarterBow = newItem(
+	"fire-starter-bow",
+	"fire starter bow",
+	"b ",
+	"#444",
+	0.05,
+	0.02,
+	0,
+	false,
+	nil,
+)
+var Campfire = newItem(
+	"campfire",
+	"Campfire",
+	"f ",
+	"#f00",
+	0,
+	0,
+	0,
+	true,
+	nil,
+)

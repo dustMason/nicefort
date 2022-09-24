@@ -75,9 +75,7 @@ func NewPlayer(id string, c Coord) *entity {
 		hunger:       0.,
 		events:       events.NewEventList(4),
 		lastTick:     time.Now(),
-		wielding:     &BareHands,
-		// testing
-		// wielding: &SharpRock,
+		wielding:     BareHands,
 	}
 
 	return &entity{player: p}

@@ -7,6 +7,7 @@ import (
 	"github.com/dustmason/nicefort/events"
 	"github.com/dustmason/nicefort/util"
 	"math/rand"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -224,6 +225,7 @@ func (w *World) DoRecipe(playerID string, r Recipe) bool {
 	e := w.getPlayer(playerID)
 	ok, newInv := r.Do(e.player.inventoryMap, e, w)
 	if ok {
+		// todo one or more items in newInv might be nonPortable. place them
 		e.player.ReplaceInventory(newInv)
 		return true
 	}
@@ -311,12 +313,12 @@ func (w *World) RenderPlayerSidebar(id string, name string) string {
 	var b strings.Builder
 	e := w.getOrCreatePlayer(id, name)
 	myLoc := e.player.loc
-	b.WriteString(name + "\n")
+	b.WriteString(name + "\n\n")
 	b.WriteString(fmt.Sprintf("Pack: %.1f / %d\n", e.player.carrying, int(e.player.maxCarry)))
 	b.WriteString(fmt.Sprintf("Health: %d / %d\n", e.player.health, e.player.maxHealth))
 	b.WriteString(fmt.Sprintf("Hunger: %.3f\n", e.player.hunger))
 	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("Wielding: %s\n", e.player.wielding.Name))
+	b.WriteString(fmt.Sprintf("%s\n", e.player.wielding.Name))
 	b.WriteString("\n")
 
 	a := e.player.GetActivity()
@@ -324,15 +326,15 @@ func (w *World) RenderPlayerSidebar(id string, name string) string {
 		b.WriteString(fmt.Sprintf("%s\n%s\n", a.description, a.pBar.ViewAs(a.progress)))
 	}
 
-	for _, ee := range w.players {
+	w.withSortedPlayers(func(ee *entity) {
 		if ee == e {
-			continue
+			return
 		}
 		pLoc := ee.player.loc
 		b.WriteString(
 			compassIndicator(myLoc.X, myLoc.Y, pLoc.X, pLoc.Y) + " " + ee.player.name + "\n",
 		)
-	}
+	})
 
 	b.WriteString("\n")
 	for _, ee := range w.activeNPCs {
@@ -584,4 +586,16 @@ func compassIndicator(fromX, fromY, toX, toY int) string {
 		out = arrow + " "
 	}
 	return out + strconv.Itoa(util.AbsInt(dx)+util.AbsInt(dy))
+}
+
+func (w *World) withSortedPlayers(f func(e *entity)) {
+	keys := make([]string, 0, len(w.players))
+	for k := range w.players {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		f(w.players[k])
+	}
 }

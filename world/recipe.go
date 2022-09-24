@@ -41,17 +41,35 @@ func FindRecipe(id int) (bool, Recipe) {
 
 type condition func(map[string]*InventoryItem, *entity, *World) (bool, map[string]int)
 
-func NewSimpleRecipe(result *Item, id int, ing ...InventoryItem) Recipe {
+func newRecipe(result *Item, id int, description string, conditions ...condition) Recipe {
+	mergedConditions := func(ii map[string]*InventoryItem, e *entity, w *World) (bool, map[string]int) {
+		out := make(map[string]int)
+		for _, f := range conditions {
+			ok, newInv := f(ii, e, w)
+			if !ok {
+				return false, out
+			}
+			for s, q := range newInv {
+				out[s] += q
+			}
+		}
+		return true, out
+	}
+	return Recipe{
+		Description: description,
+		condition:   mergedConditions,
+		Result:      result,
+		ID:          id,
+	}
+
+}
+
+func newSimpleRecipe(result *Item, id int, ing ...InventoryItem) Recipe {
 	parts := make([]string, len(ing))
 	for i, ii := range ing {
 		parts[i] = ii.Item.Name + " x " + strconv.Itoa(ii.Quantity)
 	}
-	return Recipe{
-		Description: strings.Join(parts, ", "),
-		condition:   ingredientsCondition(ing...),
-		Result:      result,
-		ID:          id,
-	}
+	return newRecipe(result, id, strings.Join(parts, ", "), ingredientsCondition(ing...))
 }
 
 func (r *Recipe) Check(inv map[string]*InventoryItem, e *entity, w *World) bool {
@@ -91,13 +109,36 @@ func ingredientsCondition(ingredients ...InventoryItem) condition {
 	}
 }
 
+// todo this should be smarter and should allow a combination of many items that have the right traits
+func traitMatchingCondition(trait ItemTraits, quantity int) condition {
+	return func(inventoryMap map[string]*InventoryItem, e *entity, w *World) (bool, map[string]int) {
+		// look at inventoryMap and find the first item that matches trait, and that we have `quantity` of
+		out := make(map[string]int)
+		for _, ii := range inventoryMap {
+			// does this item have the trait?
+			if ii.Item.HasTrait(trait) && ii.Quantity >= quantity {
+				out[ii.Item.ID] = quantity
+				return true, out
+			}
+		}
+		return false, out
+	}
+}
+
 var AllRecipes = []Recipe{
-	// NewSimpleRecipe(&TestItem3, 1,
-	// 	InventoryItem{Item: &TestItem, Quantity: 3},
-	// 	InventoryItem{Item: &TestItem2, Quantity: 1},
-	// ),
-	// NewSimpleRecipe(&TestItem4, 2,
-	// 	InventoryItem{Item: &TestItem3, Quantity: 1},
-	// 	InventoryItem{Item: &TestItem, Quantity: 10},
-	// ),
+	newSimpleRecipe(DriedLeaves, 1, InventoryItem{Item: BogMyrtleLeaves, Quantity: 1}),
+	newSimpleRecipe(Twine, 2, InventoryItem{Item: HalberdLeavedWillowSticks, Quantity: 5}),
+	newRecipe(
+		FireStarterBow,
+		3,
+		"Twine x 3, Sticks x 3, Kindling x 3",
+		ingredientsCondition(InventoryItem{Item: Twine, Quantity: 3}),
+		traitMatchingCondition(Kindling, 3),
+		traitMatchingCondition(Stick, 3),
+	),
+	newRecipe(Campfire, 4,
+		"A fire starter bow and some fuel (wood).",
+		ingredientsCondition(InventoryItem{Item: FireStarterBow, Quantity: 1}),
+		traitMatchingCondition(Fuel, 1),
+	),
 }

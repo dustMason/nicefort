@@ -49,14 +49,18 @@ func GenerateOverworld(size int) []location {
 				loc = append(loc, &entity{flora: GreyAdler()})
 			} else if r < 180 {
 				loc = append(loc, &entity{flora: GoatWillow()})
+			} else if r < 190 {
+				loc = append(loc, &entity{flora: HalberdLeavedWillow()})
 			} else if r < 200 {
 				loc = append(loc, &entity{flora: BirdCherry()})
-			} else if r < 250 {
+			} else if r < 210 {
 				// testing:
 				loc = append(loc, &entity{npc: NewRabbit(x, y)})
+			} else if r < 230 {
+				loc = append(loc, &entity{flora: GlaucousWillow()})
 			} else if r < 300 {
 				// testing:
-				loc = append(loc, &entity{npc: NewElephant(x, y)})
+				// loc = append(loc, &entity{npc: NewElephant(x, y)})
 			}
 			// todo rare arctic fox
 			stats["birch forest"] += 1
@@ -78,6 +82,8 @@ func GenerateOverworld(size int) []location {
 				loc = append(loc, &entity{flora: ScotsPine()})
 			} else if r < 120 {
 				loc = append(loc, &entity{flora: NorwaySpruce()})
+			} else if r < 150 {
+				loc = append(loc, &entity{item: SharpRock, quantity: 1})
 			}
 			stats["rocky"] += 1
 

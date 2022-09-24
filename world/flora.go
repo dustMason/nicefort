@@ -69,8 +69,8 @@ func newFlora(id, name, icon, color string, walkable bool, h harvestFunc) *Flora
 	}
 }
 
-func newFloraProduct(id, name, icon, color string, weight float64, activate func(*entity, *World) (bool, string)) *Item {
-	return &Item{ID: id, Name: name, Weight: weight, icon: icon, color: color, traits: 0, power: 0, activate: activate}
+func newFloraProduct(id, name, icon, color string, weight float64, traits ItemTraits, activate func(*Item, *entity, *World) (bool, string)) *Item {
+	return &Item{ID: id, Name: name, Weight: weight, icon: icon, color: color, traits: traits, power: 0, activate: activate}
 }
 
 // ScotsPine
@@ -96,8 +96,8 @@ func ScotsPine() *Flora {
 	)
 }
 
-var PineBark = newFloraProduct("pine-bark", "Pine Bark", "~ ", "#372F22", 0.1, nil)
-var PineWood = newFloraProduct("pine-wood", "Pine Wood", "==", "#EE852D", 0.75, nil)
+var PineBark = newFloraProduct("pine-bark", "Pine Bark", "~ ", "#372F22", 0.1, 0, nil)
+var PineWood = newFloraProduct("pine-wood", "Pine Wood", "==", "#EE852D", 0.75, 0, nil)
 
 // NorwaySpruce
 // The tree is the source of spruce beer, which was once used to prevent and even cure scurvy.
@@ -118,8 +118,8 @@ func NorwaySpruce() *Flora {
 	)
 }
 
-var SpruceWood = newFloraProduct("spruce-wood", "Spruce Wood", "==", "#C0A18C", 0.75, nil)
-var SpruceShoots = newFloraProduct("spruce-shoots", "Spruce Shoots", "u ", "#5B7B1A", 0.01, nil)
+var SpruceWood = newFloraProduct("spruce-wood", "Spruce Wood", "==", "#C0A18C", 0.75, Fuel, nil)
+var SpruceShoots = newFloraProduct("spruce-shoots", "Spruce Shoots", "u ", "#5B7B1A", 0.01, 0, nil)
 
 // It is also a popular animal bedding
 // 0-100m?
@@ -137,8 +137,8 @@ func Aspen() *Flora {
 	)
 }
 
-var AspenWood = newFloraProduct("aspen-wood", "Aspen Wood", "==", "#E9D6AC", 0.75, nil)
-var AspenBark = newFloraProduct("aspen-bark", "Aspen Bark", "~ ", "#848582", 0.1, nil)
+var AspenWood = newFloraProduct("aspen-wood", "Aspen Wood", "==", "#E9D6AC", 0.75, Fuel, nil)
+var AspenBark = newFloraProduct("aspen-bark", "Aspen Bark", "~ ", "#848582", 0.1, 0, nil)
 
 // GreyAdler
 // The Ho-Chunk people eat the bark of the rugosa subspecies when their stomachs are "sour" or upset.
@@ -158,8 +158,8 @@ func GreyAdler() *Flora {
 	)
 }
 
-var GreyAdlerWood = newFloraProduct("grey-adler-wood", "Grey Adler Wood", "==", "#AB8458", 0.75, nil)
-var GreyAdlerBark = newFloraProduct("grey-adler-bark", "Grey Adler Bark", "~ ", "#BF8C77", 0.75, nil)
+var GreyAdlerWood = newFloraProduct("grey-adler-wood", "Grey Adler Wood", "==", "#AB8458", 0.75, Fuel, nil)
+var GreyAdlerBark = newFloraProduct("grey-adler-bark", "Grey Adler Bark", "~ ", "#BF8C77", 0.75, 0, nil)
 
 func BirdCherry() *Flora {
 	return newFlora(
@@ -175,8 +175,8 @@ func BirdCherry() *Flora {
 	)
 }
 
-var BirdCherryWood = newFloraProduct("bird-cherry-wood", "Bird Cherry Wood", "==", "#A77235", 0.75, nil)
-var BirdCherries = newFloraProduct("bird-cherries", "Bird Cherries", "፝፝", "#0C1A1B", 0.05, nil)
+var BirdCherryWood = newFloraProduct("bird-cherry-wood", "Bird Cherry Wood", "==", "#A77235", 0.75, Fuel, nil)
+var BirdCherries = newFloraProduct("bird-cherries", "Bird Cherries", "፝፝", "#0C1A1B", 0.05, 0, nil)
 
 // DownyBirch
 // The outer layer of bark can be stripped off the tree without killing it and can be used to make canoe skins, drinking vessels and roofing tiles.
@@ -199,9 +199,9 @@ func DownyBirch() *Flora {
 	)
 }
 
-var DownyBirchWood = newFloraProduct("downy-birch-wood", "Downy Birch Wood", "==", "#BB926B", 0.75, nil)
-var DownyBirchBark = newFloraProduct("downy-birch-bark", "Downy Birch Bark", "~ ", "#8C827E", 0.1, nil)
-var DownyBirchBranches = newFloraProduct("downy-birch-branches", "Downy Birch Branches", "~~", "#676153", 0.25, nil)
+var DownyBirchWood = newFloraProduct("downy-birch-wood", "Downy Birch Wood", "==", "#BB926B", 0.75, Fuel, nil)
+var DownyBirchBark = newFloraProduct("downy-birch-bark", "Downy Birch Bark", "~ ", "#8C827E", 0.1, 0, nil)
+var DownyBirchBranches = newFloraProduct("downy-birch-branches", "Downy Birch Branches", "~~", "#676153", 0.25, Stick, nil)
 
 // BogMyrtle
 // The foliage has a sweet resinous scent and is a traditional insect repellent, used by campers to keep biting insects out of tents.
@@ -221,7 +221,7 @@ func BogMyrtle() *Flora {
 	)
 }
 
-var BogMyrtleLeaves = newFloraProduct("bog-myrtle-leaves", "Bog Myrtle Leaves", "..", "#778872", 0.01, nil)
+var BogMyrtleLeaves = newFloraProduct("bog-myrtle-leaves", "Bog Myrtle Leaves", "..", "#778872", 0.01, 0, nil)
 
 // GoatWillow
 // In Scandinavia it has been fairly common to make willow flutes from goat willow cuttings.
@@ -238,7 +238,7 @@ func GoatWillow() *Flora {
 	)
 }
 
-var GoatWillowStalks = newFloraProduct("goat-willow-stalks", "Goat Willow Stalks", "..", "#4D5824", 0.05, nil)
+var GoatWillowStalks = newFloraProduct("goat-willow-stalks", "Goat Willow Stalks", "..", "#4D5824", 0.05, 0, nil)
 
 // GlaucousWillow
 // was used by Native Americans as a painkiller
@@ -255,7 +255,7 @@ func GlaucousWillow() *Flora {
 	)
 }
 
-var GlaucousWillowCatkins = newFloraProduct("glaucous-willow-catkins", "Glaucous Willow Catkins", ",,", "#CFBDA8", 0.01, nil)
+var GlaucousWillowCatkins = newFloraProduct("glaucous-willow-catkins", "Glaucous Willow Catkins", ",,", "#CFBDA8", 0.01, 0, nil)
 
 // HalberdLeavedWillow
 // Native Americans used parts of willows, including this species, for medicinal purposes, basket weaving, to make bows and arrows, and for building animal traps.
@@ -274,8 +274,8 @@ func HalberdLeavedWillow() *Flora {
 	)
 }
 
-var HalberdLeavedWillowSticks = newFloraProduct("halberd-leaved-willow-sticks", "Halberd Leaved Willow Sticks", "--", "#7E9D0B", 0.1, nil)
-var HalberdLeavedWillowLeaves = newFloraProduct("halberd-leaved-willow-leaves", "Halberd Leaved Willow Leaves", "o ", "#7E9D0B", 0.01, nil)
+var HalberdLeavedWillowSticks = newFloraProduct("halberd-leaved-willow-sticks", "Halberd Leaved Willow Sticks", "--", "#7E9D0B", 0.1, Stick, nil)
+var HalberdLeavedWillowLeaves = newFloraProduct("halberd-leaved-willow-leaves", "Halberd Leaved Willow Leaves", "o ", "#7E9D0B", 0.01, 0, nil)
 
 // CloudberryBush
 func CloudberryBush() *Flora {
@@ -291,4 +291,4 @@ func CloudberryBush() *Flora {
 	)
 }
 
-var Cloudberries = newFloraProduct("cloudberries", "Cloudberries", ". ", "#FAB3BD", 0.01, ActivateEdible(0.05, "You ate a handful of delicious cloudberries"))
+var Cloudberries = newFloraProduct("cloudberries", "Cloudberries", ". ", "#FAB3BD", 0.01, 0, ActivateEdible(0.05, "You ate a handful of delicious cloudberries"))

@@ -311,12 +311,12 @@ func (m UIModel) handleInventoryModeMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m UIModel) createInventoryTable() table.Model {
-	// todo fix these widths to handle flexible viewport width
+	totalWidth := m.mainWidth() / 2
 	columns := []table.Column{
-		{Title: "#", Width: 3},
-		{Title: "Item", Width: 45},
-		{Title: "Qty", Width: 5},
-		{Title: "Weight", Width: 8},
+		{Title: "#", Width: totalWidth / 8},
+		{Title: "Item", Width: totalWidth/2 - 1},
+		{Title: "Qty", Width: totalWidth / 8},
+		{Title: "Weight", Width: totalWidth / 4},
 	}
 
 	t := table.New(
@@ -359,8 +359,9 @@ func (i recipeListItem) Description() string { return i.description }
 func (i recipeListItem) FilterValue() string { return i.title }
 
 func (m UIModel) createRecipeList() list.Model {
+	totalWidth := m.mainWidth()/2 - 1
 	d := list.NewDefaultDelegate()
-	lm := list.New(m.createRecipeListItems(), d, 50, 20)
+	lm := list.New(m.createRecipeListItems(), d, totalWidth, 20)
 	lm.Title = "Crafting Recipes"
 	lm.SetShowHelp(false)
 	lm.SetStatusBarItemName("recipe", "recipes")
@@ -397,7 +398,7 @@ var (
 )
 
 func (m UIModel) View() string {
-	mainWidth := m.width - 20 - 2 - 20 - 2 // minus both sidebars and borders
+	mainWidth := m.mainWidth()
 	mainHeight := m.height - 4 - 4
 
 	// local copy, because Width/Height mutate it. this avoids `concurrent map write` panics
@@ -447,4 +448,8 @@ func (m UIModel) View() string {
 	)
 	doc.WriteString(ui)
 	return docStyle.Render(doc.String())
+}
+
+func (m UIModel) mainWidth() int {
+	return m.width - 20 - 2 - 20 - 2 // minus both sidebars and borders
 }
