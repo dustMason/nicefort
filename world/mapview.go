@@ -9,6 +9,7 @@ import (
 // operations too expensive to perform on the entire map
 type mapView struct {
 	wMap    []location
+	dMap    *dmap.DijkstraMap
 	targets []dmap.Point
 	w       int
 	h       int
@@ -16,8 +17,8 @@ type mapView struct {
 	yOffset int
 }
 
-func newMapView(w *World, targets []dmap.Point, x1, y1, x2, y2 int) mapView {
-	mv := mapView{wMap: make([]location, 0), targets: targets}
+func newMapView(w *World, x1, y1, x2, y2 int) mapView {
+	mv := mapView{wMap: make([]location, 0)}
 	y1 = util.ClampedInt(y1, 0, w.H)
 	x1 = util.ClampedInt(x1, 0, w.W)
 	iy := y1
@@ -32,8 +33,10 @@ func newMapView(w *World, targets []dmap.Point, x1, y1, x2, y2 int) mapView {
 	}
 	mv.w = x2 - x1
 	mv.h = iy - y1
-	mv.xOffset = x1 + 1
-	mv.yOffset = y1 + 1
+	mv.xOffset = x1 // + 1
+	mv.yOffset = y1 // + 1
+	dm := dmap.BlankDMap(&mv, dmap.DiagonalNeighbours)
+	mv.dMap = dm
 	return mv
 }
 
@@ -59,46 +62,65 @@ func (mv *mapView) OOB(x int, y int) bool {
 	return !(x >= 0 && x < mv.w && y >= 0 && y < mv.h)
 }
 
+func (mv *mapView) String() string {
+	return mv.dMap.String()
+}
+
 func (mv *mapView) index(x, y int) int {
 	return y*mv.w + x
 }
 
-// todo implement moveTowards = false, ie a HighestNeighbor func on dmap
-func (mv *mapView) dijkstra(x, y int, moveTowards bool) (int, int) {
-	// all given points must be relative to the smaller slice of the map, and then translated back
-	x, y, _ = mv.offsetPoint(x, y)
+func (mv *mapView) calc(targets []dmap.Point) {
+	adjustedOffsets := mv.adjustOffsets(targets)
+	mv.dMap.Calc(adjustedOffsets...)
+}
+
+func (mv *mapView) recalc(targets []dmap.Point) {
+	adjustedOffsets := mv.adjustOffsets(targets)
+	mv.dMap.Recalc(adjustedOffsets...)
+}
+
+func (mv *mapView) adjustOffsets(targets []dmap.Point) []dmap.Point {
 	adjustedOffsets := make([]dmap.Point, 0)
-	for _, t := range mv.targets {
+	for _, t := range targets {
 		xx, yy := t.GetXY()
-		ox, oy, inBounds := mv.offsetPoint(xx, yy)
+		ox, oy, inBounds := mv.relativePoint(xx, yy)
 		if inBounds {
 			adjustedOffsets = append(adjustedOffsets, Coord{X: ox, Y: oy})
 		}
 	}
-	dMap := dmap.BlankDMap(mv, dmap.DiagonalNeighbours)
-	dMap.Calc(adjustedOffsets...)
-	var nextMove dmap.WeightedPoint
-	if moveTowards {
-		nextMove = dMap.LowestNeighbour(x, y)
-	} else {
-		nextMove = HighestNeighbor(dMap, x, y)
-	}
-	return nextMove.X + mv.xOffset, nextMove.Y + mv.yOffset
+	return adjustedOffsets
 }
 
-// offsetPoint takes a point and returns the best-fitting point within the mv.wMap
+func (mv *mapView) lowestNeighbor(x, y int) (int, int) {
+	x, y, _ = mv.relativePoint(x, y)
+	wp := mv.dMap.LowestNeighbour(x, y)
+	return mv.absolutePoint(wp.X, wp.Y)
+}
+
+func (mv *mapView) highestNeighbor(x, y int) (int, int) {
+	x, y, _ = mv.relativePoint(x, y)
+	wp := HighestNeighbor(mv.dMap, x, y)
+	return mv.absolutePoint(wp.X, wp.Y)
+}
+
+// relativePoint takes a point and returns the best-fitting point within the mv.wMap
 // if the point is off the map, the returned bool will be false
-func (mv *mapView) offsetPoint(x, y int) (int, int, bool) {
+func (mv *mapView) relativePoint(x, y int) (int, int, bool) {
 	return x - mv.xOffset, y - mv.yOffset, x-mv.xOffset > 0 && y-mv.yOffset > 0
 }
 
-// todo this doesn't seem to work. NPCs just get stuck in a cycle
+func (mv *mapView) absolutePoint(x, y int) (int, int) {
+	return x + mv.xOffset, y + mv.yOffset
+}
+
 func HighestNeighbor(d *dmap.DijkstraMap, x, y int) dmap.WeightedPoint {
 	vals := dmap.DiagonalNeighbours(d, x, y)
 	var hv dmap.Rank = 0
 	ret := vals[0]
 	for _, val := range vals {
-		if val.Val > hv {
+		// RankMax means not passable, so those aren't candidates
+		if val.Val > hv && val.Val != dmap.RankMax {
 			hv = val.Val
 			ret = val
 		}

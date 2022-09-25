@@ -18,6 +18,7 @@ type Item struct {
 	Name        string
 	Description string
 	Weight      float64
+	loc         Coord
 	activate    func(*Item, *entity, *World) (bool, string) // accepts the player and world, returns true if the item is consumed, along with a message
 	icon        string
 	color       string

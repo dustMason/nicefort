@@ -68,6 +68,7 @@ ssh -p 23234 jordan@127.0.0.1
 - ui
   - [x] fix layout bug with inventory table and make it look consistent
   - [x] `space` to pick up entity player is standing on instead of moving towards
+  - show items that player is standing on in sidebar
   - mouse support
   - render event types with color/style
 - refactor: instead of entity fields `npc`, `player`, `flora` make `NPC`, `player`, `Flora` each embed `entity`. Then switch statements can handle current `attackable`, `harvestable` scenarios. Make a new type `ItemEntity`.

@@ -11,20 +11,22 @@ type NPC struct {
 	Name string
 
 	sync.Mutex
-	icon      string
-	speed     float64 // 1.0 == every tick
-	baseSpeed float64 // 1.0 == every tick
-	sense     float64 // 1.0 == wakes up as soon as player sees it
-	health    int
-	maxHealth int
-	mood      mood
-	targets   map[*entity]struct{} // the player(s) to run from/to
-	drop      []*InventoryItem
-	behavior  behavior
-	damagedBy damagedBy
-	loc       Coord
-	lastMoved time.Time
-	dead      bool
+	icon               string
+	speed              float64 // 1.0 == every tick
+	baseSpeed          float64 // 1.0 == every tick
+	sense              float64 // 1.0 == wakes up as soon as player sees it
+	health             int
+	maxHealth          int
+	mood               mood
+	targets            map[*entity]struct{} // the stuff to run from/to
+	drop               []*InventoryItem
+	behavior           behavior
+	damagedBy          damagedBy
+	loc                Coord
+	lastMoved          time.Time
+	lastCalculatedPath time.Time
+	dead               bool
+	mapView            *mapView
 }
 
 type behavior func(w *World, e *entity) // todo a function that determines what this npc does next
@@ -32,12 +34,15 @@ type behavior func(w *World, e *entity) // todo a function that determines what 
 type damagedBy func(*Item) (bool, int) // given an item ID (wielded by player) return amount of damage done
 type mood int
 
+// todo when hungry, npc should look around for plants they like and eat them
+
 const (
 	asleep mood = iota
 	calm
 	curious
 	enraged
 	terrorized
+	hungry
 )
 
 func (n *NPC) Tick(now time.Time, w *World, e *entity) {
@@ -93,6 +98,30 @@ func newNPC(name, icon string, speed float64, health int, b behavior, x, y int) 
 	}
 }
 
+func (n *NPC) distanceToClosestTarget(w *World) int {
+	min := w.W + w.H
+	for e, _ := range n.targets {
+		loc, err := e.GetLoc()
+		if err == nil {
+			d := n.loc.Distance(loc)
+			if d < min {
+				min = d
+			}
+		}
+	}
+	return min
+}
+
+func (n *NPC) refreshMapView(w *World) {
+	if n.mapView == nil || time.Now().Sub(n.lastCalculatedPath) > time.Second*2 {
+		n.mapView = createMapView(w, n.loc)
+		n.mapView.calc(targetsToPoints(n.targets))
+		n.lastCalculatedPath = time.Now()
+	} else {
+		n.mapView.recalc(targetsToPoints(n.targets))
+	}
+}
+
 func anyWeapon(i *Item) (bool, int) {
 	if i.HasTrait(Weapon) {
 		return true, i.Damage()
@@ -100,14 +129,18 @@ func anyWeapon(i *Item) (bool, int) {
 	return false, 0
 }
 
-// normally doesn't care about players. runs away when attacked
+// normally doesn't care about anything (wanders randomly). runs away when attacked
 func defenselessCreature(w *World, me *entity) {
 	if len(me.npc.targets) > 0 {
 		me.npc.mood = terrorized
 		me.npc.speed = me.npc.baseSpeed * 2
-		mv := createMapView(w, me.npc.loc, me.npc.targets)
-		nextX, nextY := mv.dijkstra(me.npc.loc.X, me.npc.loc.Y, false)
+		me.npc.refreshMapView(w)
+		nextX, nextY := me.npc.mapView.highestNeighbor(me.npc.loc.X, me.npc.loc.Y)
 		w.MoveNPC(nextX, nextY, me)
+		if me.npc.distanceToClosestTarget(w) > NPCActivationRadius {
+			me.npc.targets = make(map[*entity]struct{})
+			me.npc.mapView = nil
+		}
 	} else {
 		me.npc.mood = calm
 		me.npc.speed = me.npc.baseSpeed
@@ -117,33 +150,42 @@ func defenselessCreature(w *World, me *entity) {
 	}
 }
 
-// normally doesn't care about players. fights back when attacked
+// normally doesn't care about anything (wanders randomly). fights back when attacked
 func annoyingCreature(w *World, me *entity) {
 	if len(me.npc.targets) > 0 {
 		me.npc.mood = enraged
 		me.npc.speed = me.npc.baseSpeed * 3
-		mv := createMapView(w, me.npc.loc, me.npc.targets)
-		nextX, nextY := mv.dijkstra(me.npc.loc.X, me.npc.loc.Y, true)
+		me.npc.refreshMapView(w)
+		nextX, nextY := me.npc.mapView.lowestNeighbor(me.npc.loc.X, me.npc.loc.Y)
 		w.MoveNPC(nextX, nextY, me)
 		// todo attack the target
 	} else {
+		me.npc.mood = calm
+		me.npc.speed = me.npc.baseSpeed
 		x := rand.Intn(3) - 1 + me.npc.loc.X
 		y := rand.Intn(3) - 1 + me.npc.loc.Y
 		w.MoveNPC(x, y, me)
 	}
 }
 
-func createMapView(w *World, loc Coord, targets map[*entity]struct{}) *mapView {
+func createMapView(w *World, loc Coord) *mapView {
 	x1 := loc.X - NPCActivationRadius
 	y1 := loc.Y - NPCActivationRadius
 	x2 := loc.X + NPCActivationRadius
 	y2 := loc.Y + NPCActivationRadius
+	mv := newMapView(w, x1, y1, x2, y2)
+	return &mv
+}
+
+func targetsToPoints(targets map[*entity]struct{}) []dmap.Point {
 	pt := make([]dmap.Point, 0, len(targets))
 	for t, _ := range targets {
-		pt = append(pt, t.player.loc)
+		loc, err := t.GetLoc()
+		if err == nil {
+			pt = append(pt, loc)
+		}
 	}
-	mv := newMapView(w, pt, x1, y1, x2, y2)
-	return &mv
+	return pt
 }
 
 // todo

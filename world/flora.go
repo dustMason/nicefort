@@ -7,6 +7,7 @@ type Flora struct {
 	name        string
 	icon        string
 	color       string
+	loc         Coord
 	harvestFunc harvestFunc
 	walkable    bool
 }

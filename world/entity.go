@@ -1,6 +1,7 @@
 package world
 
 import (
+	"errors"
 	"github.com/lucasb-eyer/go-colorful"
 	"math"
 )
@@ -43,6 +44,39 @@ func (e entity) ForegroundColor(dist float64) string {
 func (e entity) BackgroundColor(dist float64) string {
 	blend := math.Min(0.2+dist, 1.0)
 	return e.baseColor().BlendLab(black, blend).Hex()
+}
+
+var noLocationError = errors.New("no location set")
+
+func (e *entity) GetLoc() (Coord, error) {
+	if e.npc != nil {
+		return e.npc.loc, nil
+	}
+	if e.player != nil {
+		return e.player.loc, nil
+	}
+	if e.item != nil && !e.item.loc.IsZero() {
+		return e.item.loc, nil
+	}
+	if e.flora != nil && !e.flora.loc.IsZero() {
+		return e.flora.loc, nil
+	}
+	return Coord{}, noLocationError
+}
+
+func (e *entity) SetLoc(c Coord) {
+	if e.npc != nil {
+		e.npc.loc = c
+	}
+	if e.player != nil {
+		e.player.loc = c
+	}
+	if e.item != nil {
+		e.item.loc = c
+	}
+	if e.flora != nil {
+		e.flora.loc = c
+	}
 }
 
 func (e entity) SeeThrough() bool {

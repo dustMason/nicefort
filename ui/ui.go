@@ -280,7 +280,6 @@ func (m UIModel) handleInventoryModeMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case key.Matches(msg, m.keys.Enter):
 			if m.inventoryMode == InventoryList {
-				fmt.Println(m.inventory.SelectedRow())
 				i, _ := strconv.Atoi(m.inventory.SelectedRow()[0])
 				m.world.ActivateItem(m.playerID, i)
 				m.mode = Map

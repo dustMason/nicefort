@@ -6,6 +6,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dustmason/nicefort/events"
 	"github.com/dustmason/nicefort/util"
+	"math"
 	"math/rand"
 	"sort"
 	"strconv"
@@ -26,6 +27,16 @@ type Coord struct {
 
 func (c Coord) GetXY() (int, int) {
 	return c.X, c.Y
+}
+
+func (c Coord) Distance(loc Coord) int {
+	vx := math.Pow(float64(c.X-loc.X), 2)
+	vy := math.Pow(float64(c.Y-loc.Y), 2)
+	return int(math.Sqrt(vx + vy))
+}
+
+func (c Coord) IsZero() bool {
+	return c.X == 0 && c.Y == 0
 }
 
 type World struct {
@@ -201,7 +212,6 @@ func (w *World) MoveNPC(x, y int, e *entity) {
 }
 
 func (w *World) ActivateItem(playerID string, inventoryIndex int) {
-	fmt.Println("activating item index", inventoryIndex)
 	e := w.getPlayer(playerID)
 	ii := e.player.inventory[inventoryIndex]
 	consumed, message := ii.Item.Activate(e, w)
