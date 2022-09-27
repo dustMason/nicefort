@@ -6,17 +6,18 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dustmason/nicefort/events"
 	"github.com/dustmason/nicefort/util"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 	"math"
 	"math/rand"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
 const NPCActivationRadius = 10 // approx. distance from any player where NPCs take turns
-const secondsPerDay = 6.66     // seconds of real-world clock time per in-game day
+const secondsPerDay = 180      // seconds of real-world clock time per in-game day
 var blackSpace = environmentTiles[Space][0]
 var memColor = "#444444"
 var memStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(memColor))
@@ -106,7 +107,10 @@ func (w *World) runTicker() {
 }
 
 func (w *World) MovePlayer(dx, dy int, playerID string) {
-	e := w.getPlayer(playerID)
+	e, ok := w.getPlayer(playerID)
+	if !ok {
+		return
+	}
 	nx, ny := e.player.GetLocation()
 	nx += dx
 	ny += dy
@@ -155,7 +159,7 @@ func (w *World) MovePlayer(dx, dy int, playerID string) {
 }
 
 func (w *World) InteractPlayer(playerID string) {
-	e := w.getPlayer(playerID)
+	e, _ := w.getPlayer(playerID)
 	now := time.Now()
 	if !e.player.CanMove(now) {
 		return
@@ -212,7 +216,7 @@ func (w *World) MoveNPC(x, y int, e *entity) {
 }
 
 func (w *World) ActivateItem(playerID string, inventoryIndex int) {
-	e := w.getPlayer(playerID)
+	e, _ := w.getPlayer(playerID)
 	ii := e.player.inventory[inventoryIndex]
 	consumed, message := ii.Item.Activate(e, w)
 	e.player.Event(events.Info, message)
@@ -222,17 +226,20 @@ func (w *World) ActivateItem(playerID string, inventoryIndex int) {
 }
 
 func (w *World) PlayerInventory(playerID string) []*InventoryItem {
-	e := w.getPlayer(playerID)
+	e, ok := w.getPlayer(playerID)
+	if !ok {
+		return nil
+	}
 	return e.player.Inventory()
 }
 
 func (w *World) AvailableRecipes(playerID string) []Recipe {
-	e := w.getPlayer(playerID)
+	e, _ := w.getPlayer(playerID)
 	return AvailableRecipes(e.player.inventoryMap, e, w)
 }
 
 func (w *World) DoRecipe(playerID string, r Recipe) bool {
-	e := w.getPlayer(playerID)
+	e, _ := w.getPlayer(playerID)
 	ok, newInv := r.Do(e.player.inventoryMap, e, w)
 	if ok {
 		// todo one or more items in newInv might be nonPortable. place them
@@ -242,8 +249,12 @@ func (w *World) DoRecipe(playerID string, r Recipe) bool {
 	return false
 }
 
+// DisconnectPlayer should only be called when the player quits, not when they die
 func (w *World) DisconnectPlayer(playerID string) {
-	e := w.getPlayer(playerID)
+	e, ok := w.getPlayer(playerID)
+	if !ok {
+		return
+	}
 	w.disconnectPlayer(e)
 	w.Event(events.Warning, fmt.Sprintf("%s left.", e.player.name))
 	w.Lock()
@@ -252,14 +263,53 @@ func (w *World) DisconnectPlayer(playerID string) {
 	w.refreshActiveNPCs()
 }
 
+func (w *World) PlayerDeath(p *player) {
+	w.Lock()
+	defer w.Unlock()
+	// - loop through inventory and place each item in the world nearest the death spot
+	for _, ii := range p.inventory {
+		i, err := w.findNearbyAvailableIndex(p.loc.X, p.loc.Y)
+		if err != nil {
+			break
+		}
+		w.wMap[i] = addEntity(w.wMap[i], &entity{item: ii.Item, quantity: ii.Quantity})
+	}
+	// - zero out the player's inventory
+	p.ReplaceInventory(make(map[string]*InventoryItem))
+	// - send a message in the world events feed: "x died. RIP"
+	w.Event(events.Danger, fmt.Sprintf("RIP %s", p.name))
+	// - remove the player from
+	//   - players map
+	//   - onEvent callbacks
+	//   - wMap
+	delete(w.players, p.id)
+	delete(w.onEvent, p.id)
+	// a little wonky to read/iterate/delete like this but it should work
+	x, y := p.GetLocation()
+	for _, e := range w.location(x, y) {
+		if e.player == p {
+			i := w.index(x, y)
+			w.wMap[i] = removeEntity(w.wMap[i], e)
+			break
+		}
+	}
+}
+
 func (w *World) RenderPlayerEvents(playerID string) string {
-	e := w.getPlayer(playerID)
+	e, ok := w.getPlayer(playerID)
+	if !ok {
+		return ""
+	}
 	return e.player.Events()
 }
 
 func (w *World) RenderMap(playerID, playerName string, vw, vh int) string {
 	vw = vw / 2 // each environmentTile is 2 chars wide
-	ply := w.getOrCreatePlayer(playerID, playerName).player
+	playerEnt, ok := w.getPlayer(playerID)
+	if !ok {
+		return ""
+	}
+	ply := playerEnt.player
 	x, y := ply.GetLocation()
 	seen := ply.AllVisited()
 
@@ -321,7 +371,10 @@ func (w *World) RenderForMemory(x, y int) string {
 // todo refactor this to return some value type (map of string[string]?) or a struct
 func (w *World) RenderPlayerSidebar(id string, name string) string {
 	var b strings.Builder
-	e := w.getOrCreatePlayer(id, name)
+	e, ok := w.getPlayer(id)
+	if !ok {
+		return ""
+	}
 	myLoc := e.player.loc
 	b.WriteString(name + "\n\n")
 	b.WriteString(fmt.Sprintf("Pack: %.1f / %d\n", e.player.carrying, int(e.player.maxCarry)))
@@ -341,17 +394,19 @@ func (w *World) RenderPlayerSidebar(id string, name string) string {
 			return
 		}
 		pLoc := ee.player.loc
-		b.WriteString(
-			compassIndicator(myLoc.X, myLoc.Y, pLoc.X, pLoc.Y) + " " + ee.player.name + "\n",
-		)
+		arrow, dist := compassIndicator(myLoc.X, myLoc.Y, pLoc.X, pLoc.Y)
+		b.WriteString(fmt.Sprintf("%s %d %s\n", arrow, dist, ee.player.name))
 	})
 
 	b.WriteString("\n")
 	for _, ee := range w.activeNPCs {
 		nLoc := ee.npc.loc
-		b.WriteString(
-			compassIndicator(myLoc.X, myLoc.Y, nLoc.X, nLoc.Y) + " " + ee.npc.Name + "\n",
-		)
+		arrow, dist := compassIndicator(myLoc.X, myLoc.Y, nLoc.X, nLoc.Y)
+		// hack: it's annoying to keep track of which players can actually see which NPCs, so
+		// we'll just filter this list to include only ones that are close enough.
+		if dist <= NPCActivationRadius {
+			b.WriteString(fmt.Sprintf("%s %d %s\n", arrow, dist, ee.npc.Name))
+		}
 	}
 
 	// todo also get a list of the items the player can see and render compass items for those
@@ -362,11 +417,11 @@ func (w *World) RenderPlayerSidebar(id string, name string) string {
 var seasons = []string{"spring", "summer", "fall", "winter"}
 
 func (w *World) RenderWorldStatus() string {
-	// world starts on first day of spring?
 	day := int(w.days) % 365
-	year := int(w.days / 365)
+	year := int(w.days/365) + 1
 	i := int(float64(day) / 91.25)
-	season := seasons[i]
+	caser := cases.Title(language.English)
+	season := caser.String(seasons[i])
 	return fmt.Sprintf("%s : Year %d, Day %d", season, year, day)
 }
 
@@ -423,11 +478,11 @@ func (w *World) refreshActiveNPCs() {
 	w.activeNPCs = newActiveNPCs
 }
 
-func (w *World) getPlayer(playerID string) *entity {
+func (w *World) getPlayer(playerID string) (*entity, bool) {
 	w.Lock()
 	defer w.Unlock()
-	e, _ := w.players[playerID]
-	return e
+	e, ok := w.players[playerID]
+	return e, ok
 }
 
 func (w *World) isPlayerAtLocation(e *entity, x, y int) bool {
@@ -465,6 +520,11 @@ func (w *World) IsOpaque(x, y int) bool {
 	return false
 }
 
+func (w *World) empty(x, y int) bool {
+	loc := w.location(x, y)
+	return len(loc) == 1 && loc[0].environment != None
+}
+
 func (w *World) walkable(x, y int) bool {
 	for _, e := range w.location(x, y) {
 		if !e.Walkable() {
@@ -474,6 +534,7 @@ func (w *World) walkable(x, y int) bool {
 	return true
 }
 
+// occupied means a player or animal is located here
 func (w *World) occupied(x, y int) bool {
 	for _, e := range w.location(x, y) {
 		if e.Occupied() {
@@ -571,7 +632,7 @@ func (w *World) findNearbyAvailableIndex(x int, y int) (int, error) {
 		if !w.InBounds(c.X, c.Y) {
 			continue
 		}
-		if !w.occupied(c.X, c.Y) && w.walkable(c.X, c.Y) {
+		if w.empty(c.X, c.Y) && w.walkable(c.X, c.Y) {
 			return w.index(c.X, c.Y), nil
 		}
 		_, ok := seen[c]
@@ -585,17 +646,14 @@ func (w *World) findNearbyAvailableIndex(x int, y int) (int, error) {
 }
 
 // compassIndicator returns a string like "↖ 30"
-func compassIndicator(fromX, fromY, toX, toY int) string {
+func compassIndicator(fromX, fromY, toX, toY int) (string, int) {
 	dx := toX - fromX
 	dy := toY - fromY
 	deltaX := util.ClampedInt(dx, -1, 1)
 	deltaY := util.ClampedInt(dy, -1, 1)
-	arrow, ok := util.Arrows[[2]int{deltaX, deltaY}]
-	out := ""
-	if ok {
-		out = arrow + " "
-	}
-	return out + strconv.Itoa(util.AbsInt(dx)+util.AbsInt(dy))
+	out, _ := util.Arrows[[2]int{deltaX, deltaY}]
+	dist := util.AbsInt(dx) + util.AbsInt(dy)
+	return out, dist
 }
 
 func (w *World) withSortedPlayers(f func(e *entity)) {
@@ -608,4 +666,25 @@ func (w *World) withSortedPlayers(f func(e *entity)) {
 	for _, k := range keys {
 		f(w.players[k])
 	}
+}
+
+func (w *World) PlayerJoin(playerID string, playerName string) {
+	_ = w.getOrCreatePlayer(playerID, playerName)
+	w.Event(events.Warning, fmt.Sprintf("%s joined.", playerName))
+}
+
+func (w *World) RenderPosition(id string) string {
+	e, ok := w.getPlayer(id)
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("Location : %d, %d", e.player.loc.X, e.player.loc.Y)
+}
+
+func (w *World) OnPlayerDeath(playerID string, f func()) {
+	e, ok := w.getPlayer(playerID)
+	if !ok {
+		return
+	}
+	e.player.OnDeath(f)
 }

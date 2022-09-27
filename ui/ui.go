@@ -310,7 +310,7 @@ func (m UIModel) handleInventoryModeMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m UIModel) createInventoryTable() table.Model {
-	totalWidth := m.mainWidth() / 2
+	totalWidth := m.mainWidth()/2 - 5
 	columns := []table.Column{
 		{Title: "#", Width: totalWidth / 8},
 		{Title: "Item", Width: totalWidth/2 - 1},
@@ -322,7 +322,6 @@ func (m UIModel) createInventoryTable() table.Model {
 		table.WithColumns(columns),
 		table.WithRows(m.createInventoryTableRows()),
 		table.WithFocused(true),
-		// table.WithHeight(7),
 	)
 	s := table.DefaultStyles()
 	s.Header = s.Header.
@@ -342,7 +341,12 @@ func (m UIModel) createInventoryTableRows() []table.Row {
 	ii := m.world.PlayerInventory(m.playerID)
 	rows := make([]table.Row, len(ii))
 	for ind, i := range ii {
-		rows[ind] = table.Row{strconv.Itoa(ind), i.Item.Name, strconv.Itoa(i.Quantity), fmt.Sprintf("%.1f", i.Weight())}
+		rows[ind] = table.Row{
+			strconv.Itoa(ind),
+			i.Item.Name,
+			strconv.Itoa(i.Quantity),
+			fmt.Sprintf("%.1f", i.Weight()),
+		}
 	}
 	return rows
 }
@@ -388,7 +392,6 @@ var (
 
 	playerInfoStyle   = lipgloss.NewStyle().Width(20)
 	playerEventsStyle = lipgloss.NewStyle().Height(4)
-	chatPaneStyle     = lipgloss.NewStyle().Width(20)
 	chatInputStyle    = lipgloss.NewStyle().Inherit(borderedBoxStyle).Height(1).Width(20)
 	statusBarStyle    = lipgloss.NewStyle().
 				Foreground(lipgloss.AdaptiveColor{Light: "#343433", Dark: "#C1C6B2"}).
@@ -404,7 +407,8 @@ func (m UIModel) View() string {
 	piStyle := lipgloss.NewStyle().Inherit(playerInfoStyle).Height(m.height - 1) // -1 for statusbar
 	peStyle := lipgloss.NewStyle().Inherit(playerEventsStyle).Width(mainWidth).MaxHeight(4)
 	mainStyle := lipgloss.NewStyle().Inherit(borderedBoxStyle).Width(mainWidth).Height(mainHeight)
-	sbStyle := lipgloss.NewStyle().Inherit(statusBarStyle).Width(m.width)
+	sbStyleLeft := lipgloss.NewStyle().Inherit(statusBarStyle).Width(m.width / 2)
+	sbStyleRight := lipgloss.NewStyle().Inherit(statusBarStyle).Width(m.width / 2).Align(lipgloss.Right)
 	inventoryPaneStyle := lipgloss.NewStyle().Width(mainWidth / 2).Height(mainHeight)
 	recipePaneStyle := lipgloss.NewStyle().Width(mainWidth / 2).Height(mainHeight)
 	if m.inventoryMode == InventoryList {
@@ -443,7 +447,11 @@ func (m UIModel) View() string {
 				chatInputStyle.Render(m.chatInput.View()),
 			),
 		),
-		sbStyle.Render(m.world.RenderWorldStatus()), // todo use status bar for short help text
+		lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			sbStyleLeft.Render(m.world.RenderWorldStatus()), // todo use status bar for short help text
+			sbStyleRight.Render(m.world.RenderPosition(m.playerID)),
+		),
 	)
 	doc.WriteString(ui)
 	return docStyle.Render(doc.String())

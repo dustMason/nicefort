@@ -55,7 +55,7 @@ func GenerateOverworld(size int) []location {
 				loc = append(loc, &entity{flora: BirdCherry()})
 			} else if r < 210 {
 				// testing:
-				loc = append(loc, &entity{npc: NewRabbit(x, y)})
+				loc = append(loc, &entity{npc: NewBrownBear(x, y)})
 			} else if r < 230 {
 				loc = append(loc, &entity{flora: GlaucousWillow()})
 			} else if r < 300 {

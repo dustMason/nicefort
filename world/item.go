@@ -55,6 +55,15 @@ func (i Item) Activate(e *entity, w *World) (bool, string) {
 	return i.activate(&i, e, w)
 }
 
+func wieldable(i *Item, e *entity, w *World) (bool, string) {
+	if e.player.wielding != nil && e.player.wielding.ID == i.ID {
+		e.player.wielding = BareHands
+		return false, "You put away the " + i.Name
+	}
+	e.player.wielding = i
+	return false, "Now wielding: " + i.Name
+}
+
 type InventoryItem struct {
 	Item     *Item
 	Quantity int
@@ -111,10 +120,7 @@ var SharpRock = newItem(
 	0.02,
 	Knife,
 	false,
-	func(i *Item, e *entity, w *World) (bool, string) {
-		e.player.wielding = i
-		return false, "You are now wielding a sharp rock"
-	},
+	wieldable,
 )
 var DriedLeaves = newItem(
 	"dried-leaves",

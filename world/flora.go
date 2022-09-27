@@ -34,6 +34,7 @@ type product struct {
 	yields   []InventoryItem
 }
 
+// todo when not depleted, some resources should replenish eventually
 func withHarvestFunc(products ...product) harvestFunc {
 	state := make(map[ItemTraits]float64)
 	lock := sync.Mutex{}

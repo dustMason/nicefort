@@ -31,6 +31,8 @@ type player struct {
 	events          *events.EventList
 	wielding        *Item
 	currentActivity Activity
+	dead            bool
+	onDeath         func()
 
 	// counters
 	carrying  float64
@@ -149,6 +151,18 @@ func (p *player) Eat(nutrition float64) {
 	}
 }
 
+func (p *player) Attacked(w *World, damage int, message string) {
+	p.health -= damage
+	p.Event(events.Danger, message)
+	if p.health < 1 {
+		p.dead = true
+		w.PlayerDeath(p)
+		if p.onDeath != nil {
+			p.onDeath()
+		}
+	}
+}
+
 func (p *player) GetActivity() Activity {
 	return p.currentActivity
 }
@@ -196,4 +210,8 @@ func (p *player) GetLocation() (int, int) {
 func (p *player) SetLocation(x, y int, t time.Time) {
 	p.lastMoved = t
 	p.loc = Coord{x, y}
+}
+
+func (p *player) OnDeath(f func()) {
+	p.onDeath = f
 }

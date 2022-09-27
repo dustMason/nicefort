@@ -28,9 +28,9 @@ ssh -p 23234 jordan@127.0.0.1
 - bugs
   - compass indicators show all active npcs, not just the ones you can see. should be only visible ones
 - worldgen
-  - seasonal spawning of NPCs
-    - always off-screen (not near player)
-    - progressively harder with each year
+  - periodic spawning of NPCs
+    - every night, n (progressively more) bears spawn somewhere offscreen (not near players).
+    - they move from food item to food item and will target players that are carrying food
 - survival gameplay
   - tools (axe, shovel, etc)
     - [x] game support
@@ -68,6 +68,7 @@ ssh -p 23234 jordan@127.0.0.1
 - ui
   - [x] fix layout bug with inventory table and make it look consistent
   - [x] `space` to pick up entity player is standing on instead of moving towards
+  - [x] a way to unwield an item
   - show items that player is standing on in sidebar
   - mouse support
   - render event types with color/style

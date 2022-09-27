@@ -33,8 +33,8 @@ func newMapView(w *World, x1, y1, x2, y2 int) mapView {
 	}
 	mv.w = x2 - x1
 	mv.h = iy - y1
-	mv.xOffset = x1 // + 1
-	mv.yOffset = y1 // + 1
+	mv.xOffset = x1 + 1
+	mv.yOffset = y1 + 1
 	dm := dmap.BlankDMap(&mv, dmap.DiagonalNeighbours)
 	mv.dMap = dm
 	return mv
@@ -127,3 +127,19 @@ func HighestNeighbor(d *dmap.DijkstraMap, x, y int) dmap.WeightedPoint {
 	}
 	return ret
 }
+
+// todo
+// Now, the key insight is that Dijkstra maps can be multiplied by the strength
+// of these desires and then added together. To calculate how much a monster
+// desires to move in a given direction, take each desire, multiply the
+// monster's coefficient for that desire by the value of the cell of the
+// Dijkstra map that is in that direction, and sum over all desires. For
+// positive desires, use the desire number as the coefficient; for negative
+// numbers, turn the number positive and use it for the "fleeing" map of the
+// same desire. Do this for each possible direction and let the monster move in
+// the most desirable direction overall. With nine weighted sums, you will have
+// a monster intelligently weighing conflicting ideas: "can't stay near the
+// queen because the player is too powerful for that to be a useful fight, and
+// while east is a slightly more efficient escape route, west will take me past
+// water (I am very thirsty) and also toward another of my compatriots -- so
+// I'll go west."

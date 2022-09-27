@@ -2,6 +2,7 @@ package world
 
 import (
 	"errors"
+	"fmt"
 	"github.com/lucasb-eyer/go-colorful"
 	"math"
 )
@@ -14,8 +15,6 @@ type entity struct {
 	environment Environment
 	quantity    int
 	variant     int // 0 < n < 10, random value decided at worldgen time to use for visual texture
-	// todo move the loc field here
-	// todo add baseColor field and make a constructor for `entity`. baseColor should be cached
 }
 
 var black, _ = colorful.Hex("#000000")
@@ -26,7 +25,7 @@ func (e entity) String() string {
 		return " " + string(e.player.name[0])
 	}
 	if e.npc != nil {
-		return e.npc.icon
+		return e.npc.String()
 	}
 	if e.item != nil {
 		return e.item.String()
@@ -47,8 +46,12 @@ func (e entity) BackgroundColor(dist float64) string {
 }
 
 var noLocationError = errors.New("no location set")
+var deadError = errors.New("already dead")
 
-func (e *entity) GetLoc() (Coord, error) {
+func (e entity) GetLoc() (Coord, error) {
+	if e.IsDead() {
+		return Coord{}, deadError
+	}
 	if e.npc != nil {
 		return e.npc.loc, nil
 	}
@@ -64,20 +67,20 @@ func (e *entity) GetLoc() (Coord, error) {
 	return Coord{}, noLocationError
 }
 
-func (e *entity) SetLoc(c Coord) {
-	if e.npc != nil {
-		e.npc.loc = c
-	}
-	if e.player != nil {
-		e.player.loc = c
-	}
-	if e.item != nil {
-		e.item.loc = c
-	}
-	if e.flora != nil {
-		e.flora.loc = c
-	}
-}
+// func (e entity) SetLoc(c Coord) {
+// 	if e.npc != nil {
+// 		e.npc.loc = c
+// 	}
+// 	if e.player != nil {
+// 		e.player.loc = c
+// 	}
+// 	if e.item != nil {
+// 		e.item.loc = c
+// 	}
+// 	if e.flora != nil {
+// 		e.flora.loc = c
+// 	}
+// }
 
 func (e entity) SeeThrough() bool {
 	if e.flora != nil {
@@ -151,10 +154,31 @@ func (e entity) Occupied() bool {
 	if e.npc != nil || e.player != nil {
 		return true
 	}
-	if e.flora != nil {
-		return !e.flora.walkable
-	}
 	return false
+}
+
+func (e entity) Attacked(w *World, attacker *entity, damage int) error {
+	if attacker.npc == nil || e.player == nil {
+		return fmt.Errorf("unsupported attack scenario. attacker: %s, target: %s", attacker, e)
+	}
+	if damage > 0 {
+		e.player.Attacked(
+			w,
+			damage,
+			fmt.Sprintf("The %s attacked you! You lost %d health", attacker.npc.Name, damage),
+		)
+	} else {
+		e.player.Attacked(
+			w,
+			0,
+			fmt.Sprintf("The %s missed!", attacker.npc.Name),
+		)
+	}
+	return nil
+}
+
+func (e entity) IsDead() bool {
+	return e.player != nil && e.player.dead
 }
 
 type Environment int

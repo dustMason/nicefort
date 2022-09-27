@@ -1,6 +1,7 @@
 package world
 
 import (
+	"fmt"
 	"github.com/japanoise/dmap"
 	"math/rand"
 	"sync"
@@ -18,10 +19,11 @@ type NPC struct {
 	health             int
 	maxHealth          int
 	mood               mood
-	targets            map[*entity]struct{} // the stuff to run from/to
+	targets            map[*entity]targetWeight // the stuff to run from/to
 	drop               []*InventoryItem
 	behavior           behavior
 	damagedBy          damagedBy
+	damageRange        [2]int // min/max damage dealt by attack
 	loc                Coord
 	lastMoved          time.Time
 	lastCalculatedPath time.Time
@@ -35,14 +37,20 @@ type damagedBy func(*Item) (bool, int) // given an item ID (wielded by player) r
 type mood int
 
 // todo when hungry, npc should look around for plants they like and eat them
+// every tick, there should be a low chance of a mode change between asleep, calm and hungry
 
 const (
 	asleep mood = iota
 	calm
-	curious
-	enraged
 	terrorized
 	hungry
+)
+
+type targetWeight int
+
+const (
+	food  targetWeight = 1
+	enemy targetWeight = 100
 )
 
 func (n *NPC) Tick(now time.Time, w *World, e *entity) {
@@ -57,7 +65,14 @@ func (n *NPC) Tick(now time.Time, w *World, e *entity) {
 }
 
 func (n *NPC) String() string {
-	return n.icon
+	var suffix string
+	switch n.mood {
+	case terrorized:
+		suffix = "!"
+	default:
+		suffix = " "
+	}
+	return n.icon + suffix
 }
 
 func (n *NPC) Color() string {
@@ -74,9 +89,10 @@ func (n *NPC) Attackable() bool {
 
 // Attacked returns the amount of damage done, whether the npc is alive, and any items dropped
 func (n *NPC) Attacked(by *Item, e *entity, damage int) (int, bool, bool, []*InventoryItem) {
+	n.mood = terrorized
 	success, amount := n.damagedBy(by)
 	n.health -= amount
-	n.targets[e] = struct{}{}
+	n.targets[e] = enemy
 	if n.health <= 0 {
 		n.dead = true
 		return damage, true, true, n.drop
@@ -84,17 +100,18 @@ func (n *NPC) Attacked(by *Item, e *entity, damage int) (int, bool, bool, []*Inv
 	return damage, success, false, nil
 }
 
-func newNPC(name, icon string, speed float64, health int, b behavior, x, y int) *NPC {
+func newNPC(name, icon string, speed float64, health int, damageRange [2]int, b behavior, x, y int) *NPC {
 	return &NPC{
-		Name:      name,
-		icon:      icon,
-		baseSpeed: speed,
-		health:    health,
-		maxHealth: health,
-		behavior:  b,
-		damagedBy: anyWeapon,
-		loc:       Coord{x, y},
-		targets:   make(map[*entity]struct{}),
+		Name:        name,
+		icon:        icon,
+		baseSpeed:   speed,
+		health:      health,
+		maxHealth:   health,
+		behavior:    b,
+		damagedBy:   anyWeapon,
+		damageRange: damageRange,
+		loc:         Coord{x, y},
+		targets:     make(map[*entity]targetWeight),
 	}
 }
 
@@ -113,6 +130,7 @@ func (n *NPC) distanceToClosestTarget(w *World) int {
 }
 
 func (n *NPC) refreshMapView(w *World) {
+	n.targets = relevantTargets(n.targets) // filter out irrelevant targets
 	if n.mapView == nil || time.Now().Sub(n.lastCalculatedPath) > time.Second*2 {
 		n.mapView = createMapView(w, n.loc)
 		n.mapView.calc(targetsToPoints(n.targets))
@@ -129,20 +147,30 @@ func anyWeapon(i *Item) (bool, int) {
 	return false, 0
 }
 
+func relevantTargets(targets map[*entity]targetWeight) map[*entity]targetWeight {
+	out := make(map[*entity]targetWeight)
+	for t, w := range targets {
+		if !t.IsDead() {
+			out[t] = w
+		}
+	}
+	return out
+}
+
 // normally doesn't care about anything (wanders randomly). runs away when attacked
 func defenselessCreature(w *World, me *entity) {
-	if len(me.npc.targets) > 0 {
-		me.npc.mood = terrorized
+	if me.npc.mood == terrorized && len(me.npc.targets) > 0 {
 		me.npc.speed = me.npc.baseSpeed * 2
 		me.npc.refreshMapView(w)
 		nextX, nextY := me.npc.mapView.highestNeighbor(me.npc.loc.X, me.npc.loc.Y)
 		w.MoveNPC(nextX, nextY, me)
 		if me.npc.distanceToClosestTarget(w) > NPCActivationRadius {
-			me.npc.targets = make(map[*entity]struct{})
+			me.npc.mood = hungry
+			me.npc.targets = make(map[*entity]targetWeight)
 			me.npc.mapView = nil
 		}
 	} else {
-		me.npc.mood = calm
+		me.npc.mood = hungry
 		me.npc.speed = me.npc.baseSpeed
 		x := rand.Intn(3) - 1 + me.npc.loc.X
 		y := rand.Intn(3) - 1 + me.npc.loc.Y
@@ -151,14 +179,26 @@ func defenselessCreature(w *World, me *entity) {
 }
 
 // normally doesn't care about anything (wanders randomly). fights back when attacked
-func annoyingCreature(w *World, me *entity) {
+func aggressiveCreature(w *World, me *entity) {
 	if len(me.npc.targets) > 0 {
-		me.npc.mood = enraged
+		me.npc.mood = terrorized
 		me.npc.speed = me.npc.baseSpeed * 3
 		me.npc.refreshMapView(w)
 		nextX, nextY := me.npc.mapView.lowestNeighbor(me.npc.loc.X, me.npc.loc.Y)
 		w.MoveNPC(nextX, nextY, me)
-		// todo attack the target
+		for target, _ := range me.npc.targets {
+			tLoc, err := target.GetLoc()
+			if err != nil {
+				continue
+			}
+			if nextX == tLoc.X && nextY == tLoc.Y {
+				damage := rand.Intn(me.npc.damageRange[1]-me.npc.damageRange[0]) + me.npc.damageRange[0]
+				err = target.Attacked(w, me, damage)
+				if err != nil {
+					fmt.Println(err)
+				}
+			}
+		}
 	} else {
 		me.npc.mood = calm
 		me.npc.speed = me.npc.baseSpeed
@@ -177,12 +217,12 @@ func createMapView(w *World, loc Coord) *mapView {
 	return &mv
 }
 
-func targetsToPoints(targets map[*entity]struct{}) []dmap.Point {
+func targetsToPoints(targets map[*entity]targetWeight) []dmap.Point {
 	pt := make([]dmap.Point, 0, len(targets))
 	for t, _ := range targets {
 		loc, err := t.GetLoc()
 		if err == nil {
-			pt = append(pt, loc)
+			pt = append(pt, Coord{X: loc.X, Y: loc.Y})
 		}
 	}
 	return pt
@@ -203,9 +243,17 @@ func targetsToPoints(targets map[*entity]struct{}) []dmap.Point {
 // perch are also found.
 
 func NewRabbit(x, y int) *NPC {
-	return newNPC("rabbit", "r ", 0.2, 30, defenselessCreature, x, y)
+	return newNPC("rabbit", "r", 0.2, 30, [2]int{0, 1}, defenselessCreature, x, y)
 }
 
-func NewElephant(x, y int) *NPC {
-	return newNPC("elephant", "E ", 0.1, 400, annoyingCreature, x, y)
+func NewBrownBear(x, y int) *NPC {
+	return newNPC("brown bear", "b", 0.5, 300, [2]int{10, 100}, aggressiveCreature, x, y)
 }
+
+// func NewDeer(x, y int) *NPC {
+// 	return newNPC("deer", "d", 0.8, 200, defenselessCreature, x, y)
+// }
+//
+// func NewElk(x, y int) *NPC {
+// 	return newNPC("elk", "e", 0.8, 200, defenselessCreature, x, y)
+// }
